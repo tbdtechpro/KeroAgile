@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"keroagile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 func (s *Store) CreateSprint(sp *domain.Sprint) (*domain.Sprint, error) {

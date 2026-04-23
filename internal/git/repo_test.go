@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"keroagile/internal/git"
+	"github.com/tbdtechpro/KeroAgile/internal/git"
 )
 
 func TestAutoLinkTaskID(t *testing.T) {

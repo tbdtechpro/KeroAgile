@@ -1,4 +1,4 @@
-module keroagile
+module github.com/tbdtechpro/KeroAgile
 
 go 1.25.0
 

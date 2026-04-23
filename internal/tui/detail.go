@@ -6,9 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"keroagile/internal/domain"
-	"keroagile/internal/git"
-	"keroagile/internal/tui/styles"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/git"
+	"github.com/tbdtechpro/KeroAgile/internal/tui/styles"
 )
 
 // Detail is the right panel showing full task info and git context.
@@ -180,8 +180,9 @@ func detailField(label, value string) string {
 }
 
 func truncate(s string, n int) string {
-	if n <= 0 || len(s) <= n {
+	r := []rune(s)
+	if n <= 0 || len(r) <= n {
 		return s
 	}
-	return s[:n-3] + "..."
+	return string(r[:n-3]) + "..."
 }

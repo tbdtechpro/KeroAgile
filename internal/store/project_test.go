@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"keroagile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 func TestProjectCRUD(t *testing.T) {

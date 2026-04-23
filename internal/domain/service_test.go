@@ -16,6 +16,7 @@ type mockStore struct {
 	sprints  map[int64]*domain.Sprint
 	seqs     map[string]int
 	deps     map[string][]string // blocked_id -> []blocker_id
+	blocking map[string][]string // blocker_id -> []blocked_id
 }
 
 func newMock() *mockStore {
@@ -26,6 +27,7 @@ func newMock() *mockStore {
 		sprints:  make(map[int64]*domain.Sprint),
 		seqs:     make(map[string]int),
 		deps:     make(map[string][]string),
+		blocking: make(map[string][]string),
 	}
 }
 
@@ -84,10 +86,11 @@ func (m *mockStore) DeleteTask(id string) error {
 	return nil
 }
 func (m *mockStore) GetTaskDeps(taskID string) (blockers, blocking []string, err error) {
-	return m.deps[taskID], nil, nil
+	return m.deps[taskID], m.blocking[taskID], nil
 }
 func (m *mockStore) AddDep(blockerID, blockedID string) error {
 	m.deps[blockedID] = append(m.deps[blockedID], blockerID)
+	m.blocking[blockerID] = append(m.blocking[blockerID], blockedID)
 	return nil
 }
 func (m *mockStore) RemoveDep(blockerID, blockedID string) error { return nil }

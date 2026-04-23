@@ -13,7 +13,7 @@ type TaskCreateOpts struct {
 	Priority   Priority
 	Status     Status
 	AssigneeID string
-	Points     int
+	Points     *int
 	Labels     []string
 	SprintID   *int64
 }
@@ -78,8 +78,8 @@ func (s *Service) CreateTask(title, description, projectID string, opts TaskCrea
 	if opts.AssigneeID != "" {
 		t.AssigneeID = &opts.AssigneeID
 	}
-	if opts.Points > 0 {
-		t.Points = &opts.Points
+	if opts.Points != nil {
+		t.Points = opts.Points
 	}
 	return t, s.store.CreateTask(t)
 }
@@ -116,7 +116,16 @@ func (s *Service) GetTask(id string) (*Task, error) {
 
 func (s *Service) UpdateTask(t *Task) (*Task, error) {
 	t.UpdatedAt = time.Now().UTC()
-	return t, s.store.UpdateTask(t)
+	if err := s.store.UpdateTask(t); err != nil {
+		return nil, err
+	}
+	blockers, blocking, err := s.store.GetTaskDeps(t.ID)
+	if err != nil {
+		return nil, err
+	}
+	t.Blockers = blockers
+	t.Blocking = blocking
+	return t, nil
 }
 
 func (s *Service) MoveTask(id string, status Status) (*Task, error) {

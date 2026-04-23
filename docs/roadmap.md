@@ -216,80 +216,90 @@ Exposes the full interactive TUI at `http://homelab:7433` in any browser. Zero J
 
 ---
 
-## 4. Claude Code integration (v0.4.0)
+## 4. Claude Code integration (v0.2.0)
 
-KeroAgile should integrate natively with Claude Code so that an AI agent working in a repo can read and update the board without leaving its coding context.
+KeroAgile should integrate natively with Claude Code so that an AI agent working in any repo can read and update the board in plain English — "add a high-priority task called X to project KA", "what's in progress?", "mark KA-007 as done" — without the user ever typing a CLI command.
 
-### 4.1 MCP server
+**Status:** MCP (Model Context Protocol) is fully supported in Claude Code today. It is not blocked on any external API stabilisation. The only missing piece is the `KeroAgile mcp` subcommand in the binary. Once that exists and the user drops a `.mcp.json` file in their project (or sets it globally), Claude Code discovers and calls KeroAgile tools automatically in every conversation.
 
-Implement KeroAgile as an MCP (Model Context Protocol) server. When running, Claude Code can call KeroAgile tools directly:
+### 4.1 MCP server (`KeroAgile mcp`)
 
-Proposed tools:
-- `keroagile_list_tasks` — list tasks for a project with optional filters
-- `keroagile_get_task` — get full task detail including blockers and git context
-- `keroagile_create_task` — create a task from a title/description
-- `keroagile_move_task` — advance task status
-- `keroagile_link_branch` — link current git branch to a task
-- `keroagile_add_blocker` — mark one task as blocking another
-- `keroagile_get_sprint` — get active sprint and its tasks
+**Ready to implement now.**
 
-The MCP server wraps `domain.Service` directly (same binary, `KeroAgile mcp` subcommand). If the API server (Mode C) is running, the MCP server can optionally proxy to it instead of hitting SQLite directly.
+Add a `mcp` subcommand that starts a JSON-RPC 2.0 server over stdio, implementing the MCP tool protocol that Claude Code speaks. The server wraps `domain.Service` directly — no new data layer required.
 
-**MCP server mode:**
+New package: `internal/mcp/server.go` — tool registration, request dispatch, response formatting.
+
+**Tools to expose:**
+
+| Tool | Description |
+|------|-------------|
+| `list_projects` | List all projects |
+| `list_tasks` | List tasks; filters: `project_id`, `status`, `assignee_id`, `sprint_id` |
+| `get_task` | Full task detail including blockers, branch, PR |
+| `create_task` | Create task; params: title, project_id, assignee_id, priority, points, labels |
+| `update_task` | Edit title, description, priority, assignee, points, labels |
+| `move_task` | Change status; params: task_id, status |
+| `delete_task` | Delete task by ID |
+| `link_branch` | Link a git branch to a task |
+| `list_users` | List all users |
+| `get_sprint` | Get sprint by project; returns active sprint and its tasks |
+| `add_blocker` | Mark task A as blocking task B |
+| `remove_blocker` | Remove a blocker relationship |
+
+**Launch modes:**
 ```bash
-KeroAgile mcp          # stdio transport (for Claude Code local config)
-KeroAgile mcp --http :7434  # HTTP transport (for remote Claude Code instances)
+KeroAgile mcp                        # stdio (local Claude Code config)
+KeroAgile mcp --remote http://homelab:7432  # proxy to API server (Phase 3.3)
 ```
 
-### 4.2 Claude Code plugin / skill
+The `--remote` flag lets a local Claude Code instance talk to a KeroAgile server on the home network — no SQLite file needed on the user's machine.
 
-A superpowers skill (or Claude Code slash command plugin) that teaches Claude how to use KeroAgile in a project context:
+### 4.2 Claude Code skills
 
-- **Skill: `keroagile-update`** — on completing a task, finds the matching KeroAgile task by branch name, moves it to `done`, and links the PR
-- **Skill: `keroagile-standup`** — summarises in-progress tasks for the current project with assignees and blockers
-- **Skill: `keroagile-plan`** — reads the backlog and suggests a sprint composition based on priorities and points
+Skills that teach Claude when and how to use KeroAgile naturally during development work:
 
-### 4.3 Configuration documentation
+- **`keroagile-update`** — when Claude finishes a task, auto-finds the matching KeroAgile task by branch name, moves it to `done`, and links the PR number
+- **`keroagile-standup`** — summarises in-progress tasks for the current project with assignees and blockers; useful as a morning context-setter
+- **`keroagile-plan`** — reads the backlog and suggests sprint composition based on priority and story points
 
-Once MCP support ships, add a dedicated **Claude Code Integration** section to the README:
+Skills use the MCP tools above — they are prompt-engineering guides for *when* to call the tools, not additional code.
 
-```markdown
-## Claude Code integration
+### 4.3 Configuration
 
-### Local setup (stdio MCP)
+Add a **Claude Code Integration** section to the README once 4.1 ships. The exact configuration format is confirmed — Claude Code uses `.mcp.json` at the project root (or `~/.claude/settings.json` for global config):
 
-Add to your Claude Code config (~/.claude/settings.json or project .claude/settings.json):
+**Local setup** (KeroAgile binary on the same machine as Claude Code):
 
-\`\`\`json
+```json
+// .mcp.json in any project root, or ~/.claude/settings.json globally
 {
   "mcpServers": {
     "keroagile": {
-      "command": "KeroAgile",
-      "args": ["mcp"],
-      "env": {}
+      "type": "stdio",
+      "command": "/home/matt/.local/bin/KeroAgile",
+      "args": ["mcp"]
     }
   }
 }
-\`\`\`
+```
 
-### Remote setup (API server + HTTP MCP)
+**Remote setup** (KeroAgile running on a homelab server, requires Phase 3.3):
 
-If KeroAgile runs on a homelab server:
-
-\`\`\`json
+```json
 {
   "mcpServers": {
     "keroagile": {
-      "command": "KeroAgile",
+      "type": "stdio",
+      "command": "/home/matt/.local/bin/KeroAgile",
       "args": ["mcp", "--remote", "http://homelab:7432"],
       "env": { "KEROAGILE_TOKEN": "your-token" }
     }
   }
 }
-\`\`\`
 ```
 
-*(Configuration syntax is a placeholder — update when MCP server is implemented and Claude Code plugin API is finalised.)*
+Once configured, Claude Code discovers all KeroAgile tools automatically. No per-project setup, no explaining the CLI — plain English works from any repo.
 
 ---
 
@@ -356,9 +366,9 @@ With the web interface running on a homelab server, any device on the home netwo
 | 3.2 | Docker container + compose | v0.3.0 | S |
 | 3.3 | API server mode + remote client | v0.3.0 | XL |
 | 3.4 | TUI-in-browser via ttyd (optional) | v0.3.0 | S |
-| 4.1 | MCP server (`KeroAgile mcp`) | v0.4.0 | L |
-| 4.2 | Claude Code plugin / skill | v0.4.0 | M |
-| 4.3 | Claude Code configuration docs | v0.4.0 | S |
+| 4.1 | MCP server (`KeroAgile mcp`) | v0.2.0 | L |
+| 4.2 | Claude Code skills | v0.2.0 | M |
+| 4.3 | Claude Code configuration docs | v0.2.0 | S |
 | 5.1 | Web UI architecture + API prereq | v1.0.0 | XL |
 | 5.2 | Web UI feature parity with TUI | v1.0.0 | XL |
 | 5.3 | `KeroAgile web` unified server | v1.0.0 | M |

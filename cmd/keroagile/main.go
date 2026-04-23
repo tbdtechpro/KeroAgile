@@ -10,6 +10,7 @@ import (
 	"keroagile/internal/config"
 	"keroagile/internal/domain"
 	"keroagile/internal/store"
+	"keroagile/internal/tui"
 )
 
 var (
@@ -47,8 +48,8 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("TUI launching... (Plan B)")
-		return nil
+		app := tui.New(svc)
+		return app.Run()
 	},
 }
 

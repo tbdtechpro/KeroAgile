@@ -88,21 +88,21 @@ func (p Priority) Label() string {
 }
 
 type Task struct {
-	ID          string
-	ProjectID   string
-	SprintID    *int64
-	Title       string
-	Description string
-	Status      Status
-	Priority    Priority
-	Points      *int
-	AssigneeID  *string
-	Branch      string
-	PRNumber    *int
-	PRMerged    bool
-	Labels      []string
-	Blockers    []string // task IDs that block this task
-	Blocking    []string // task IDs this task blocks
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          string    `json:"id"`
+	ProjectID   string    `json:"project_id"`
+	SprintID    *int64    `json:"sprint_id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Status      Status    `json:"status"`
+	Priority    Priority  `json:"priority"`
+	Points      *int      `json:"points"`
+	AssigneeID  *string   `json:"assignee_id"`
+	Branch      string    `json:"branch"`
+	PRNumber    *int      `json:"pr_number"`
+	PRMerged    bool      `json:"pr_merged"`
+	Labels      []string  `json:"labels"`
+	Blockers    []string  `json:"blockers"` // task IDs that block this task
+	Blocking    []string  `json:"blocking"` // task IDs this task blocks
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }

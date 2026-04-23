@@ -3,10 +3,10 @@ package domain
 import "time"
 
 type Project struct {
-	ID         string
-	Name       string
-	RepoPath   string
-	SprintMode bool
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	RepoPath   string `json:"repo_path"`
+	SprintMode bool   `json:"sprint_mode"`
 }
 
 type SprintStatus string
@@ -18,10 +18,10 @@ const (
 )
 
 type Sprint struct {
-	ID        int64
-	ProjectID string
-	Name      string
-	StartDate *time.Time
-	EndDate   *time.Time
-	Status    SprintStatus
+	ID        int64        `json:"id"`
+	ProjectID string       `json:"project_id"`
+	Name      string       `json:"name"`
+	StartDate *time.Time   `json:"start_date"`
+	EndDate   *time.Time   `json:"end_date"`
+	Status    SprintStatus `json:"status"`
 }

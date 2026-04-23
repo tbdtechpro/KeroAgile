@@ -1,9 +1,9 @@
 package domain
 
 type User struct {
-	ID          string
-	DisplayName string
-	IsAgent     bool
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	IsAgent     bool   `json:"is_agent"`
 }
 
 func (u User) DisplayPrefix() string {

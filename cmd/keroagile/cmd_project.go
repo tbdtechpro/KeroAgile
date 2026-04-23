@@ -59,7 +59,15 @@ var projectSprintCmd = &cobra.Command{
 		if err := svc.SetSprintMode(args[0], enabled); err != nil {
 			return err
 		}
-		fmt.Printf("sprint mode %s for %s\n", args[1], args[0])
+		if jsonFlag {
+			p, err := svc.GetProject(args[0])
+			if err != nil {
+				return err
+			}
+			printJSON(p)
+		} else {
+			fmt.Printf("sprint mode %s for %s\n", args[1], args[0])
+		}
 		return nil
 	},
 }

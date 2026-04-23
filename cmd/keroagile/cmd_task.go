@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -113,7 +114,10 @@ var taskGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		t, err := svc.GetTask(args[0])
 		if err != nil {
-			exitNotFound(args[0])
+			if errors.Is(err, domain.ErrNotFound) {
+				exitNotFound(args[0])
+			}
+			return err
 		}
 		if jsonFlag {
 			printJSON(t)
@@ -164,7 +168,11 @@ var taskLinkBranchCmd = &cobra.Command{
 		if err := svc.LinkBranch(args[0], args[1]); err != nil {
 			return err
 		}
-		fmt.Printf("linked %s → branch %s\n", args[0], args[1])
+		if jsonFlag {
+			printJSON(map[string]string{"id": args[0], "branch": args[1]})
+		} else {
+			fmt.Printf("linked %s → branch %s\n", args[0], args[1])
+		}
 		return nil
 	},
 }
@@ -181,7 +189,11 @@ var taskLinkPRCmd = &cobra.Command{
 		if err := svc.LinkPR(args[0], prNum); err != nil {
 			return err
 		}
-		fmt.Printf("linked %s → PR #%d\n", args[0], prNum)
+		if jsonFlag {
+			printJSON(map[string]any{"id": args[0], "pr_number": prNum})
+		} else {
+			fmt.Printf("linked %s → PR #%d\n", args[0], prNum)
+		}
 		return nil
 	},
 }
@@ -194,7 +206,11 @@ var taskDeleteCmd = &cobra.Command{
 		if err := svc.DeleteTask(args[0]); err != nil {
 			return err
 		}
-		fmt.Printf("deleted %s\n", args[0])
+		if jsonFlag {
+			printJSON(map[string]string{"deleted": args[0]})
+		} else {
+			fmt.Printf("deleted %s\n", args[0])
+		}
 		return nil
 	},
 }

@@ -1,0 +1,31 @@
+package domain_test
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"keroagile/internal/domain"
+)
+
+func TestStatusNext(t *testing.T) {
+	assert.Equal(t, domain.StatusTodo, domain.StatusBacklog.Next())
+	assert.Equal(t, domain.StatusInProgress, domain.StatusTodo.Next())
+	assert.Equal(t, domain.StatusReview, domain.StatusInProgress.Next())
+	assert.Equal(t, domain.StatusDone, domain.StatusReview.Next())
+	assert.Equal(t, domain.StatusDone, domain.StatusDone.Next()) // no-op at end
+}
+
+func TestStatusPrev(t *testing.T) {
+	assert.Equal(t, domain.StatusBacklog, domain.StatusBacklog.Prev()) // no-op at start
+	assert.Equal(t, domain.StatusBacklog, domain.StatusTodo.Prev())
+	assert.Equal(t, domain.StatusTodo, domain.StatusInProgress.Prev())
+}
+
+func TestStatusLabel(t *testing.T) {
+	assert.Equal(t, "In Progress", domain.StatusInProgress.Label())
+	assert.Equal(t, "Backlog", domain.StatusBacklog.Label())
+}
+
+func TestPriorityColor(t *testing.T) {
+	assert.NotEmpty(t, domain.PriorityCritical.Color())
+}

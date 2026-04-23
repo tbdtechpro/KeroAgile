@@ -169,17 +169,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadTasks(msg.projectID))
 
 	case taskSelectedMsg:
-		t, err := a.svc.GetTask(msg.taskID)
-		if err == nil {
-			a.detail = a.detail.SetTask(t)
-			cmds = append(cmds, a.refreshGit(t))
+		// Fix 4: search cache instead of calling svc.GetTask
+		for _, t := range a.currentTasks {
+			if t.ID == msg.taskID {
+				a.detail = a.detail.SetTask(t)
+				cmds = append(cmds, a.refreshGit(t))
+				break
+			}
 		}
 
 	case taskMovedMsg:
-		if _, err := a.svc.MoveTask(msg.taskID, msg.status); err == nil {
-			pid := a.sidebar.SelectedProjectID()
-			cmds = append(cmds, a.loadTasks(pid))
-		}
+		// Fix 7: wrap MoveTask in a cmd instead of calling synchronously
+		pid := a.sidebar.SelectedProjectID()
+		cmds = append(cmds, a.doMoveTask(msg.taskID, msg.status, pid))
 
 	case gitRefreshedMsg:
 		a.detail = a.detail.SetCommits(msg.commits)
@@ -192,11 +194,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case prMergedMsg:
-		if err := a.svc.MarkPRMerged(msg.taskID); err == nil {
-			pid := a.sidebar.SelectedProjectID()
-			a.setStatus(fmt.Sprintf("✓ %s auto-closed via merged PR", msg.taskID))
-			cmds = append(cmds, a.loadTasks(pid))
-		}
+		// Fix 9: wrap MarkPRMerged in a cmd instead of calling synchronously
+		pid := a.sidebar.SelectedProjectID()
+		cmds = append(cmds, a.doMarkPRMerged(msg.taskID, pid))
+
+	case reloadTasksMsg:
+		cmds = append(cmds, a.loadTasks(msg.projectID))
+
+	case deletedTaskMsg:
+		a.setStatus(fmt.Sprintf("deleted %s", msg.taskID))
+		cmds = append(cmds, a.loadTasks(msg.projectID))
+
+	case prMergedDoneMsg:
+		a.setStatus(fmt.Sprintf("✓ %s auto-closed via merged PR", msg.taskID))
+		cmds = append(cmds, a.loadTasks(msg.projectID))
 
 	case statusNotifMsg:
 		a.setStatus(msg.text)
@@ -235,6 +246,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
+	var cmds []tea.Cmd
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return []tea.Cmd{tea.Quit}
@@ -251,44 +263,50 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 	case "n":
 		a.openNewForm()
 	case "e":
+		// Fix 5: search cache instead of calling svc.GetTask
 		if id := a.board.SelectedTaskID(); id != "" {
-			if t, err := a.svc.GetTask(id); err == nil {
-				a.openEditForm(t)
+			for _, t := range a.currentTasks {
+				if t.ID == id {
+					a.openEditForm(t)
+					break
+				}
 			}
 		}
 	case "m":
+		// Fix 6: search cache + wrap MoveTask in cmd
 		if id := a.board.SelectedTaskID(); id != "" {
-			if t, err := a.svc.GetTask(id); err == nil {
-				next := t.Status.Next()
-				if _, err := a.svc.MoveTask(id, next); err == nil {
+			for _, t := range a.currentTasks {
+				if t.ID == id {
+					next := t.Status.Next()
 					pid := a.sidebar.SelectedProjectID()
-					return []tea.Cmd{a.loadTasks(pid)}
+					cmds = append(cmds, a.doMoveTask(id, next, pid))
+					break
 				}
 			}
 		}
 	case "M":
+		// Fix 6: search cache + wrap MoveTask in cmd
 		if id := a.board.SelectedTaskID(); id != "" {
-			if t, err := a.svc.GetTask(id); err == nil {
-				prev := t.Status.Prev()
-				if _, err := a.svc.MoveTask(id, prev); err == nil {
+			for _, t := range a.currentTasks {
+				if t.ID == id {
+					prev := t.Status.Prev()
 					pid := a.sidebar.SelectedProjectID()
-					return []tea.Cmd{a.loadTasks(pid)}
+					cmds = append(cmds, a.doMoveTask(id, prev, pid))
+					break
 				}
 			}
 		}
 	case "d":
+		// Fix 8: wrap DeleteTask in cmd
 		if id := a.board.SelectedTaskID(); id != "" {
-			if err := a.svc.DeleteTask(id); err == nil {
-				pid := a.sidebar.SelectedProjectID()
-				a.setStatus(fmt.Sprintf("deleted %s", id))
-				return []tea.Cmd{a.loadTasks(pid)}
-			}
+			pid := a.sidebar.SelectedProjectID()
+			cmds = append(cmds, a.doDeleteTask(id, pid))
 		}
 	case "r":
 		pid := a.sidebar.SelectedProjectID()
-		return []tea.Cmd{a.loadTasks(pid), a.pollCurrentTaskGit()}
+		cmds = append(cmds, a.loadTasks(pid), a.pollCurrentTaskGit())
 	}
-	return nil
+	return cmds
 }
 
 func (a *App) handleMouse(msg tea.MouseMsg) []tea.Cmd {
@@ -348,41 +366,87 @@ func (a *App) openEditForm(t *domain.Task) {
 	a.form = &f
 }
 
+// Fix 10: handleFormSaved wraps mutations in cmds; uses cache for edit.
 func (a App) handleFormSaved(msg forms.SavedMsg) (tea.Model, tea.Cmd) {
 	a.form = nil
-	var err error
+	pid := a.sidebar.SelectedProjectID()
 	if msg.IsNew {
+		return a, a.doCreateTask(msg, pid)
+	}
+	// find task in cache for edit
+	for _, t := range a.currentTasks {
+		if t.ID == msg.TaskID {
+			return a, a.doUpdateTask(msg, t)
+		}
+	}
+	return a, nil
+}
+
+func (a App) doCreateTask(msg forms.SavedMsg, projectID string) tea.Cmd {
+	return func() tea.Msg {
 		opts := domain.TaskCreateOpts{
 			AssigneeID: msg.AssigneeID,
 			Priority:   msg.Priority,
 			Status:     msg.Status,
 			Labels:     msg.Labels,
-			Points:     msg.Points, // both *int
+			Points:     msg.Points,
 		}
-		_, err = a.svc.CreateTask(msg.Title, msg.Description, a.sidebar.SelectedProjectID(), opts)
+		if _, err := a.svc.CreateTask(msg.Title, msg.Description, projectID, opts); err != nil {
+			return statusNotifMsg{fmt.Sprintf("error: %v", err)}
+		}
+		return reloadTasksMsg{projectID}
+	}
+}
+
+func (a App) doUpdateTask(msg forms.SavedMsg, t *domain.Task) tea.Cmd {
+	// copy to avoid mutation of shared pointer
+	updated := *t
+	updated.Title = msg.Title
+	updated.Description = msg.Description
+	updated.Priority = msg.Priority
+	updated.Status = msg.Status
+	updated.Labels = msg.Labels
+	updated.Points = msg.Points
+	if msg.AssigneeID != "" {
+		s := msg.AssigneeID
+		updated.AssigneeID = &s
 	} else {
-		t, gerr := a.svc.GetTask(msg.TaskID)
-		if gerr == nil {
-			t.Title = msg.Title
-			t.Description = msg.Description
-			t.Priority = msg.Priority
-			t.Status = msg.Status
-			t.Labels = msg.Labels
-			if msg.AssigneeID != "" {
-				s := msg.AssigneeID
-				t.AssigneeID = &s
-			} else {
-				t.AssigneeID = nil
-			}
-			t.Points = msg.Points
-			_, err = a.svc.UpdateTask(t)
+		updated.AssigneeID = nil
+	}
+	projectID := t.ProjectID
+	return func() tea.Msg {
+		if _, err := a.svc.UpdateTask(&updated); err != nil {
+			return statusNotifMsg{fmt.Sprintf("error: %v", err)}
 		}
+		return reloadTasksMsg{projectID}
 	}
-	if err != nil {
-		a.setStatus(fmt.Sprintf("error: %v", err))
-		return a, nil
+}
+
+func (a App) doMoveTask(id string, status domain.Status, projectID string) tea.Cmd {
+	return func() tea.Msg {
+		if _, err := a.svc.MoveTask(id, status); err != nil {
+			return statusNotifMsg{fmt.Sprintf("error moving task: %v", err)}
+		}
+		return reloadTasksMsg{projectID}
 	}
-	return a, a.loadTasks(a.sidebar.SelectedProjectID())
+}
+
+func (a App) doDeleteTask(id, projectID string) tea.Cmd {
+	return func() tea.Msg {
+		if err := a.svc.DeleteTask(id); err != nil {
+			return statusNotifMsg{fmt.Sprintf("error deleting task: %v", err)}
+		}
+		return deletedTaskMsg{id, projectID}
+	}
+}
+
+func (a App) doMarkPRMerged(id, projectID string) tea.Cmd {
+	return func() tea.Msg {
+		if err := a.svc.MarkPRMerged(id); err != nil {
+			return statusNotifMsg{fmt.Sprintf("error closing task: %v", err)}
+		}
+		return prMergedDoneMsg{taskID: id, projectID: projectID}
+	}
 }
 
 func (a App) refreshGit(t *domain.Task) tea.Cmd {
@@ -400,22 +464,34 @@ func (a App) refreshGit(t *domain.Task) tea.Cmd {
 	}
 }
 
+// Fix 3: pollCurrentTaskGit uses cache lookups instead of svc.GetTask/GetProject.
 func (a App) pollCurrentTaskGit() tea.Cmd {
 	id := a.board.SelectedTaskID()
 	if id == "" {
 		return nil
 	}
-	t, err := a.svc.GetTask(id)
-	if err != nil || t.PRNumber == nil {
+	var task *domain.Task
+	for _, t := range a.currentTasks {
+		if t.ID == id {
+			task = t
+			break
+		}
+	}
+	if task == nil || task.PRNumber == nil {
 		return nil
 	}
-	p, err := a.svc.GetProject(t.ProjectID)
-	if err != nil || p.RepoPath == "" {
+	var repoPath string
+	for _, p := range a.projects {
+		if p.ID == task.ProjectID {
+			repoPath = p.RepoPath
+			break
+		}
+	}
+	if repoPath == "" {
 		return nil
 	}
-	prNum := *t.PRNumber
-	taskID := t.ID
-	repoPath := p.RepoPath
+	prNum := *task.PRNumber
+	taskID := task.ID
 	return func() tea.Msg {
 		status, err := git.PRView(repoPath, prNum)
 		if err != nil {
@@ -425,26 +501,32 @@ func (a App) pollCurrentTaskGit() tea.Cmd {
 	}
 }
 
+// Fix 2: pollPRs uses cache lookups instead of svc.GetProject.
 func (a App) pollPRs() []tea.Cmd {
 	var cmds []tea.Cmd
 	for _, t := range a.currentTasks {
-		if t.Status == domain.StatusReview && t.PRNumber != nil {
-			t := t
-			p, err := a.svc.GetProject(t.ProjectID)
-			if err != nil || p.RepoPath == "" {
-				continue
-			}
-			prNum := *t.PRNumber
-			taskID := t.ID
-			repoPath := p.RepoPath
-			cmds = append(cmds, func() tea.Msg {
-				status, err := git.PRView(repoPath, prNum)
-				if err != nil {
-					return nil
-				}
-				return prStatusMsg{taskID: taskID, prStatus: status}
-			})
+		if t.Status != domain.StatusReview || t.PRNumber == nil {
+			continue
 		}
+		var repoPath string
+		for _, p := range a.projects {
+			if p.ID == t.ProjectID {
+				repoPath = p.RepoPath
+				break
+			}
+		}
+		if repoPath == "" {
+			continue
+		}
+		prNum := *t.PRNumber
+		taskID := t.ID
+		cmds = append(cmds, func() tea.Msg {
+			status, err := git.PRView(repoPath, prNum)
+			if err != nil {
+				return nil
+			}
+			return prStatusMsg{taskID: taskID, prStatus: status}
+		})
 	}
 	return cmds
 }
@@ -459,12 +541,16 @@ func (a App) View() string {
 		return "loading..."
 	}
 
+	// Fix 1: search projects cache instead of calling svc.GetProject
 	project := ""
-	if pid := a.sidebar.SelectedProjectID(); pid != "" {
-		if p, err := a.svc.GetProject(pid); err == nil {
+	pid := a.sidebar.SelectedProjectID()
+	for _, p := range a.projects {
+		if p.ID == pid {
 			project = p.Name
+			break
 		}
 	}
+
 	header := styles.Header.Width(a.width).Render(
 		styles.Logo.Render("⬡ KeroAgile") + "  " +
 			styles.Muted.Render(project),
@@ -491,4 +577,3 @@ func (a App) View() string {
 
 // Ensure App implements tea.Model
 var _ tea.Model = (*App)(nil)
-

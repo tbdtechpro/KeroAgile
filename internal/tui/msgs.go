@@ -44,6 +44,15 @@ type showFormMsg struct{ task *domain.Task }
 // statusNotifMsg shows a transient notification in the status bar.
 type statusNotifMsg struct{ text string }
 
+// reloadTasksMsg triggers a fresh task list load for the given project.
+type reloadTasksMsg struct{ projectID string }
+
+// deletedTaskMsg is sent after a task has been successfully deleted.
+type deletedTaskMsg struct{ taskID, projectID string }
+
+// prMergedDoneMsg is sent after MarkPRMerged succeeds.
+type prMergedDoneMsg struct{ taskID, projectID string }
+
 // projectsLoadedMsg carries a fresh project list after initial load.
 type projectsLoadedMsg struct{ projects []*domain.Project }
 

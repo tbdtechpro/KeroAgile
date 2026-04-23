@@ -19,6 +19,8 @@ func TestStatusPrev(t *testing.T) {
 	assert.Equal(t, domain.StatusBacklog, domain.StatusBacklog.Prev()) // no-op at start
 	assert.Equal(t, domain.StatusBacklog, domain.StatusTodo.Prev())
 	assert.Equal(t, domain.StatusTodo, domain.StatusInProgress.Prev())
+	assert.Equal(t, domain.StatusInProgress, domain.StatusReview.Prev())
+	assert.Equal(t, domain.StatusReview, domain.StatusDone.Prev())
 }
 
 func TestStatusLabel(t *testing.T) {
@@ -27,5 +29,8 @@ func TestStatusLabel(t *testing.T) {
 }
 
 func TestPriorityColor(t *testing.T) {
-	assert.NotEmpty(t, domain.PriorityCritical.Color())
+	assert.Equal(t, "#6B7280", domain.PriorityLow.Color())
+	assert.Equal(t, "#EAB308", domain.PriorityMedium.Color())
+	assert.Equal(t, "#F97316", domain.PriorityHigh.Color())
+	assert.Equal(t, "#EF4444", domain.PriorityCritical.Color())
 }

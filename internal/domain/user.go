@@ -6,7 +6,7 @@ type User struct {
 	IsAgent     bool
 }
 
-func (u *User) DisplayPrefix() string {
+func (u User) DisplayPrefix() string {
 	if u.IsAgent {
 		return "🤖 " + u.DisplayName
 	}

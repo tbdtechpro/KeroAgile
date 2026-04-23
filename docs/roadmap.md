@@ -159,15 +159,50 @@ This requires adding a `KEROAGILE_DATA_DIR` environment variable to `internal/co
 
 ### 3.3 Mode C — API server mode (network-accessible, homelab)
 
-Adds an optional HTTP API server that exposes all domain service operations over a local REST API. This is the foundation for network access from other machines and for the eventual web interface.
+Adds an optional HTTP API server that exposes all domain service operations over a REST API. This is the architectural prerequisite for the MCP remote mode (§4.1), the web interface (§5), and multi-machine access from anywhere on the home network.
 
-**New binary target** (or `--serve` flag on the existing binary): `KeroAgile serve --addr :7432`
+**Design decisions (confirmed):**
+- Port: **7432**
+- Data model: **one shared board** — all users see the same projects and tasks; users filter to their own work via a `--mine` / `@me` shorthand
+- Auth: **per-user identity with admin management** — no email validation, no 2FA, no OAuth
 
-API surface mirrors the CLI:
+**Launch:**
+```bash
+KeroAgile serve --addr :7432
 ```
+
+#### Auth design
+
+Username/password authentication issues a short-lived JWT bearer token. All API requests carry the token in `Authorization: Bearer <token>`. The domain layer is unchanged — the server layer validates the token and passes the caller's user ID as context.
+
+**Bootstrap:** the first `user add` call made while no users exist (or via a `--admin` flag) creates the admin account. Subsequent user creation requires an admin token.
+
+**Password storage:** bcrypt hashes stored in a new `credentials` table alongside the existing `users` table. The current `User` type (display name, agent flag) stays unchanged — credentials are a separate concern.
+
+**Admin capabilities:**
+- `KeroAgile user add <id> <name> --password <initial>` — create user with a temporary password
+- `KeroAgile user reset-password <id> <new-password>` — admin resets any user's password
+- `KeroAgile user list --reset-requested` — see who has flagged a forgotten password
+
+**User password reset flow:**
+1. User runs `KeroAgile user forgot-password` against the server — sets a `reset_requested` flag in the DB
+2. Admin sees the flag via `user list --reset-requested` or a notification in the TUI/web
+3. Admin resets the password; user logs in with the new one
+
+No email required. Simple, works entirely within the tool.
+
+**Token expiry:** configurable in `config.toml` (`token_ttl_hours`, default 168 = 7 days). No refresh token complexity.
+
+#### API surface
+
+```
+POST   /api/auth/login              { user_id, password } → { token }
+
 GET    /api/projects
 POST   /api/projects
 GET    /api/projects/:id
+PATCH  /api/projects/:id
+
 GET    /api/projects/:id/tasks
 POST   /api/projects/:id/tasks
 GET    /api/tasks/:id
@@ -176,22 +211,44 @@ DELETE /api/tasks/:id
 POST   /api/tasks/:id/move
 POST   /api/tasks/:id/link-branch
 POST   /api/tasks/:id/link-pr
+
 GET    /api/users
-POST   /api/users
+POST   /api/users                   (admin only)
+POST   /api/users/:id/reset-password (admin only)
+POST   /api/users/forgot-password
+
 GET    /api/sprints?project=:id
 POST   /api/sprints
 POST   /api/sprints/:id/activate
+POST   /api/sprints/:id/assign-task
 ```
 
-All responses use the existing JSON serialisation (snake_case tags already in place).
+All responses use the existing snake_case JSON tags. All routes except `/api/auth/login` require a valid bearer token.
 
-**Remote client mode:** The CLI and TUI gain a `--remote http://homelab:7432` flag (or `remote_url` in config). When set, all store calls are HTTP requests to the API server instead of local SQLite. The domain layer stays unchanged — a new `internal/store/remote/client.go` implementing `domain.Store` over HTTP.
+#### "My tasks" filter
 
-This enables the full multi-machine workflow: server runs `KeroAgile serve`, any machine on the network runs `KeroAgile --remote http://homelab:7432` to get the full TUI or CLI against the shared board.
+The current `TaskFilters.AssigneeID` already exists in the store. The API and CLI expose it as:
 
-**Auth:** For homelab use, simple shared token via `Authorization: Bearer <token>` header is sufficient. Token set in server config.
+```bash
+KeroAgile task list --mine          # CLI shorthand for --assignee <current user>
+```
 
-**docker-compose with server mode:**
+In the TUI, a toggle (e.g. `f` key) switches between "all tasks" and "my tasks" for the active project. The server resolves `@me` to the authenticated user's ID.
+
+#### Remote client mode
+
+The CLI and TUI gain a `--remote http://homelab:7432` flag (or `remote_url` + `remote_token` in `config.toml`). When set, all store calls become HTTP requests to the API server instead of local SQLite. Implementation: a new `internal/store/remote/client.go` that implements `domain.Store` over HTTP. The domain and service layers are unchanged.
+
+```toml
+# ~/.config/keroagile/config.toml
+remote_url   = "http://homelab:7432"
+remote_token = "your-jwt-token"
+```
+
+This enables the full multi-machine workflow: server runs on the homelab, any machine on the network runs `KeroAgile` or `KeroAgile mcp` against the shared board with their own identity.
+
+#### docker-compose with server mode
+
 ```yaml
 services:
   keroagile:
@@ -201,6 +258,10 @@ services:
       - "7432:7432"
     volumes:
       - keroagile-data:/data
+    environment:
+      - KEROAGILE_DATA_DIR=/data
+volumes:
+  keroagile-data:
 ```
 
 ### 3.4 Mode D — TUI in browser via terminal proxy (optional convenience)

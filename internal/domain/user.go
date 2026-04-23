@@ -8,7 +8,7 @@ type User struct {
 
 func (u *User) DisplayPrefix() string {
 	if u.IsAgent {
-		return u.DisplayName
+		return "🤖 " + u.DisplayName
 	}
-	return u.DisplayName
+	return "👤 " + u.DisplayName
 }

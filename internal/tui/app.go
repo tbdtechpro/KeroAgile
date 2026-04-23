@@ -344,7 +344,8 @@ func (a *App) relayout() {
 	h := a.height - 3
 
 	a.sidebar = a.sidebar.SetSize(sw, h)
-	a.board = a.board.SetSize(bw, h)
+	// panelTop = 1 header row + 1 top border row
+	a.board = a.board.SetSize(bw, h).SetPanelTop(2)
 	a.detail = a.detail.SetSize(dw, h)
 }
 

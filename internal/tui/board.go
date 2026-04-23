@@ -16,13 +16,14 @@ var statusOrder = []domain.Status{
 
 // Board is the middle panel showing all tasks grouped by status.
 type Board struct {
-	tasks       []*domain.Task
-	flatIndex   []int                 // maps linear cursor to tasks slice index
-	cursor      int                   // linear cursor across all visible tasks
-	drag        *DragState
-	focused     bool
-	width       int
-	height      int
+	tasks     []*domain.Task
+	flatIndex []int // maps linear cursor to tasks slice index
+	cursor    int   // linear cursor across all visible tasks
+	drag      *DragState
+	focused   bool
+	width     int
+	height    int
+	panelTop  int // terminal row where the panel's first content line appears (set by App)
 }
 
 func NewBoard(tasks []*domain.Task, width, height int) Board {
@@ -50,6 +51,11 @@ func (b Board) SetFocused(f bool) Board {
 func (b Board) SetSize(w, h int) Board {
 	b.width = w
 	b.height = h
+	return b
+}
+
+func (b Board) SetPanelTop(row int) Board {
+	b.panelTop = row
 	return b
 }
 
@@ -242,10 +248,15 @@ func (b Board) View() string {
 		lines = append(lines, "")
 	}
 
+	panelTop := b.panelTop
+	if panelTop == 0 {
+		panelTop = 2 // default: 1 header row + 1 border row
+	}
 	content := ""
 	for i, l := range lines {
-		if b.drag.Active() && i == b.drag.CurrentY-2 {
+		if b.drag.Active() && i == b.drag.CurrentY-panelTop {
 			content += styles.DragGhost.Render(" ⠿ "+b.drag.TaskTitle) + "\n"
+			continue // replace the original row with the ghost, not prepend
 		}
 		content += l + "\n"
 	}

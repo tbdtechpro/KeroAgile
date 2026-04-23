@@ -80,13 +80,23 @@ All domain structs have `json:"snake_case"` tags. Field names in JSON output:
 
 Never use `t.Fatal` inside a goroutine. Prefer `require.NoError` over `assert.NoError` when the test cannot continue after failure.
 
-## Known limitations (v0.1.0)
+## Known bugs (fix before v0.2.0)
 
+- **`go.mod` module path is wrong** — currently `module keroagile`; must become `module github.com/tbdtechpro/keroagile`. Global find-and-replace across all `*.go` import paths. Do this first before any other v0.2.0 work.
 - Store calls inside `App.Update` are synchronous (SQLite in-process, fast enough for local use)
 - Drag ghost uses raw screen Y, not panel-relative Y — visual artifact during drag
 - Drag ghost adds a line without removing the original — may clip in short panels
 - Priority/status fields in the task form accept free text (no enum validation)
 - Truncation is byte-based, not rune-aware — emoji in titles may display with replacement character
+
+## Roadmap
+
+All planned future work is documented in `docs/roadmap.md`. Key upcoming phases:
+
+- **v0.1.x** — fix module path, TUI async I/O, drag ghost, form validation, rune-aware truncation
+- **v0.2.0** — MCP server (`KeroAgile mcp` subcommand), Claude Code skills, CI, goreleaser
+- **v0.3.0** — API server (port 7432, JWT auth, small-team multi-user), Docker, remote client mode
+- **v1.0.0** — React web UI (Vite + TypeScript + TanStack Query + dnd kit + Tailwind), embedded via `go:embed`
 
 ## Config file
 

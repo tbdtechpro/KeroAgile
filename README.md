@@ -11,12 +11,12 @@ Data lives in a single SQLite file at `~/.config/keroagile/keroagile.db`. No ser
 ## Requirements
 
 - Go 1.21+
-- Optional: `git` for branch auto-link, `gh` for PR status
+- Optional: `git` for branch auto-link, `gh` for PR polling
 
 ## Install
 
 ```bash
-git clone https://github.com/matt/KeroAgile
+git clone https://github.com/tbdtechpro/KeroAgile
 cd KeroAgile
 make install          # installs to ~/.local/bin/KeroAgile
 ```
@@ -122,6 +122,49 @@ default_assignee = "alice"
 ```
 
 Setting `default_project` means you can omit `--project` on most task commands.
+
+## Claude Code integration
+
+> **Coming in v0.2.0.** Once the `KeroAgile mcp` subcommand ships, KeroAgile will work as a native Claude Code tool. You will be able to manage tasks in plain English from any repo — no CLI commands required.
+
+One-time setup:
+
+```json
+// ~/.claude/settings.json  (global — works in every repo)
+{
+  "mcpServers": {
+    "keroagile": {
+      "type": "stdio",
+      "command": "/home/you/.local/bin/KeroAgile",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+After that, Claude Code auto-detects the active KeroAgile project from the git remote URL of whichever repo you are working in. No project argument needed.
+
+```
+"Add a high-priority task: implement OAuth login"
+"What's in progress on this project?"
+"Mark KA-007 as done and link PR #42"
+```
+
+For this to work, the project must have been created with `--repo` pointing at the repo's remote URL:
+
+```bash
+KeroAgile project add MYAPP "My App" --repo https://github.com/you/my-app
+```
+
+## Troubleshooting
+
+**`gh: command not found`** — PR polling is disabled; tasks still work normally. Install the [GitHub CLI](https://cli.github.com) to enable PR auto-transition.
+
+**`database is locked`** — only one KeroAgile process should write at a time. If a TUI session crashed, close any lingering processes and retry.
+
+**Terminal too narrow** — the TUI needs at least 80 columns and 24 rows. Resize the window or reduce font size.
+
+**Task IDs are wrong** — task IDs are `<project-id>-<seq>` (e.g. `MYAPP-001`). Project ID is case-sensitive.
 
 ## Architecture
 

@@ -109,24 +109,15 @@ which KeroAgile
 
 Add a `keroagile` entry to your Claude Code settings. There are two places you can put it:
 
-**Global** — works in every repo:
+**Global** — works in every repo (recommended):
 
-```json
-// ~/.claude/settings.json
-{
-  "mcpServers": {
-    "keroagile": {
-      "type": "stdio",
-      "command": "/usr/local/bin/KeroAgile",
-      "args": ["mcp"]
-    }
-  }
-}
+```bash
+claude mcp add --scope user keroagile /usr/local/bin/KeroAgile mcp
 ```
 
 Replace `/usr/local/bin/KeroAgile` with the actual path from `which KeroAgile`.
 
-**Per-repo** — only active in one project:
+**Per-repo** — only active in one project, checked into source control:
 
 ```json
 // <repo-root>/.mcp.json
@@ -141,7 +132,12 @@ Replace `/usr/local/bin/KeroAgile` with the actual path from `which KeroAgile`.
 }
 ```
 
-Restart Claude Code after editing the settings file.
+Verify it connected:
+
+```bash
+claude mcp list
+# keroagile: /usr/local/bin/KeroAgile mcp - ✓ Connected
+```
 
 ### Step 3 — Create a KeroAgile project linked to your repo
 
@@ -287,7 +283,7 @@ KeroAgile project list --json | jq '.[] | {id, repo_path}'
 ```
 The `repo_path` must be a substring of the remote URL. Re-create the project with `--repo` if needed.
 
-**MCP server not showing up in Claude Code** — restart Claude Code after editing `settings.json`. Confirm the `command` path is correct with `which KeroAgile`. The MCP server writes nothing to stdout at startup; it only responds when Claude sends it a request.
+**MCP server not showing up in Claude Code** — run `claude mcp list` to check registration and connection status. Confirm the command path is correct with `which KeroAgile`. The MCP server writes nothing to stdout at startup; it only responds when Claude sends it a request.
 
 **`gh: command not found`** — PR polling is disabled; tasks still work normally. Install the [GitHub CLI](https://cli.github.com) to enable PR auto-transition.
 

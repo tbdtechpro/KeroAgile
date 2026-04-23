@@ -59,7 +59,7 @@ func isTerminal(f *os.File) bool {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false, "output JSON")
-	rootCmd.AddCommand(projectCmd, taskCmd, sprintCmd, userCmd)
+	rootCmd.AddCommand(projectCmd, taskCmd, sprintCmd, userCmd, mcpCmd)
 }
 
 func main() {

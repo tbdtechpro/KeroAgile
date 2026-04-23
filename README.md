@@ -88,6 +88,8 @@ KeroAgile sprint add <name> --project <id> [--start YYYY-MM-DD] [--end YYYY-MM-D
 KeroAgile sprint list --project <id>
 KeroAgile sprint activate <sprint-id>
 KeroAgile sprint assign <task-id> <sprint-id>
+
+KeroAgile mcp                              # start MCP server (Claude Code integration)
 ```
 
 Every command accepts `--json` for structured output. When stdout is not a TTY (e.g. piped to `jq`), JSON is emitted automatically.
@@ -125,7 +127,7 @@ Setting `default_project` means you can omit `--project` on most task commands.
 
 ## Claude Code integration
 
-> **Coming in v0.2.0.** Once the `KeroAgile mcp` subcommand ships, KeroAgile will work as a native Claude Code tool. You will be able to manage tasks in plain English from any repo — no CLI commands required.
+KeroAgile works as a native Claude Code tool via MCP. Once installed, you can manage tasks in plain English from any repo — no CLI commands required.
 
 One-time setup:
 

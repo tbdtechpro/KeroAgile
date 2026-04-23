@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"keroagile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 // DragState tracks an active mouse drag-and-drop operation.

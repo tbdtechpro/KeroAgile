@@ -5,8 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
-	"keroagile/internal/domain"
-	"keroagile/internal/tui"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/tui"
 )
 
 func testTasks() []*domain.Task {

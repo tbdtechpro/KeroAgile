@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-	"keroagile/internal/config"
-	"keroagile/internal/domain"
-	"keroagile/internal/store"
-	"keroagile/internal/tui"
+	"github.com/tbdtechpro/KeroAgile/internal/config"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/store"
+	"github.com/tbdtechpro/KeroAgile/internal/tui"
 )
 
 var (

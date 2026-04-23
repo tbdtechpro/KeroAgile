@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"keroagile/internal/domain"
-	"keroagile/internal/git"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/git"
 )
 
 // projectSelectedMsg is sent when the user selects a different project in the sidebar.

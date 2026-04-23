@@ -3,7 +3,7 @@ package store_test
 import (
 	"testing"
 
-	"keroagile/internal/store"
+	"github.com/tbdtechpro/KeroAgile/internal/store"
 )
 
 func testStore(t *testing.T) *store.Store {

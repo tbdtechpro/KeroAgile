@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"keroagile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 func TestStatusNext(t *testing.T) {

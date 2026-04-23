@@ -3,7 +3,7 @@ package store
 import (
 	"database/sql"
 
-	"keroagile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 // Store implements domain.Store using SQLite.

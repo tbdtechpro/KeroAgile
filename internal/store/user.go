@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"keroagile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 func (s *Store) CreateUser(u *domain.User) error {

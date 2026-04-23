@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"keroagile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 func (s *Store) NextTaskSeq(projectID string) (int, error) {

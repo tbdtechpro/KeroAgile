@@ -6,9 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"keroagile/internal/domain"
-	"keroagile/internal/git"
-	"keroagile/internal/tui/styles"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/git"
+	"github.com/tbdtechpro/KeroAgile/internal/tui/styles"
 )
 
 // Detail is the right panel showing full task info and git context.

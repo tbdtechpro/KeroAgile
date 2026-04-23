@@ -7,10 +7,10 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"keroagile/internal/domain"
-	"keroagile/internal/git"
-	"keroagile/internal/tui/forms"
-	"keroagile/internal/tui/styles"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/git"
+	"github.com/tbdtechpro/KeroAgile/internal/tui/forms"
+	"github.com/tbdtechpro/KeroAgile/internal/tui/styles"
 )
 
 type panelFocus int

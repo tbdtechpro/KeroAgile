@@ -108,26 +108,27 @@ func toolList() []toolDef {
 		},
 		{
 			Name:        "get_sprint",
-			Description: "Get the active sprint for a project and its tasks. Auto-detects project_id from git remote.",
+			Description: "Get a sprint and its tasks. Pass sprint_id for a specific sprint, or omit to get the active sprint (project_id auto-detected from git remote).",
 			InputSchema: obj(map[string]any{
-				"project_id": str("Project ID (auto-detected if omitted)"),
+				"sprint_id":  map[string]any{"type": "integer", "description": "Sprint ID (omit to get the active sprint)"},
+				"project_id": str("Project ID for active-sprint lookup (auto-detected if omitted)"),
 			}, nil),
 		},
 		{
 			Name:        "add_blocker",
 			Description: "Mark task A as blocking task B (A must be done before B can start).",
 			InputSchema: obj(map[string]any{
-				"blocker_id": str("ID of the task that is blocking"),
-				"blocked_id": str("ID of the task that is blocked"),
-			}, []string{"blocker_id", "blocked_id"}),
+				"task_id":    str("ID of the task that is blocking"),
+				"blocked_by": str("ID of the task that is blocked"),
+			}, []string{"task_id", "blocked_by"}),
 		},
 		{
 			Name:        "remove_blocker",
 			Description: "Remove a blocker relationship between two tasks.",
 			InputSchema: obj(map[string]any{
-				"blocker_id": str("ID of the blocking task"),
-				"blocked_id": str("ID of the blocked task"),
-			}, []string{"blocker_id", "blocked_id"}),
+				"task_id":    str("ID of the blocking task"),
+				"blocked_by": str("ID of the blocked task"),
+			}, []string{"task_id", "blocked_by"}),
 		},
 	}
 }
@@ -307,12 +308,26 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		return toJSON(users)
 
 	case "get_sprint":
+		// Direct lookup by sprint_id if provided.
+		if sid, ok := args["sprint_id"].(float64); ok {
+			id := int64(sid)
+			sp, err := svc.GetSprint(id)
+			if err != nil {
+				return "", err
+			}
+			tasks, err := svc.ListTasks(sp.ProjectID, domain.TaskFilters{SprintID: &sp.ID})
+			if err != nil {
+				return "", err
+			}
+			return toJSON(map[string]any{"sprint": sp, "tasks": tasks})
+		}
+		// Fall back to active-sprint lookup via project_id.
 		pid := str("project_id")
 		if pid == "" {
 			pid = DetectProjectID(svc)
 		}
 		if pid == "" {
-			return "", errors.New("project_id required — provide it or run `KeroAgile project add --repo <remote-url>` to enable auto-detection")
+			return "", errors.New("sprint_id or project_id required — provide sprint_id, pass project_id, or run `KeroAgile project add --repo <remote-url>` to enable auto-detection")
 		}
 		sprints, err := svc.ListSprints(pid)
 		if err != nil {
@@ -335,26 +350,26 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		return toJSON(map[string]any{"sprint": active, "tasks": tasks})
 
 	case "add_blocker":
-		blockerID := str("blocker_id")
-		blockedID := str("blocked_id")
-		if blockerID == "" || blockedID == "" {
-			return "", errors.New("blocker_id and blocked_id are required")
+		taskID := str("task_id")
+		blockedBy := str("blocked_by")
+		if taskID == "" || blockedBy == "" {
+			return "", errors.New("task_id and blocked_by are required")
 		}
-		if err := svc.AddDep(blockerID, blockedID); err != nil {
+		if err := svc.AddDep(taskID, blockedBy); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf(`{"blocker": "%s", "blocked": "%s", "added": true}`, blockerID, blockedID), nil
+		return fmt.Sprintf(`{"blocker": "%s", "blocked": "%s", "added": true}`, taskID, blockedBy), nil
 
 	case "remove_blocker":
-		blockerID := str("blocker_id")
-		blockedID := str("blocked_id")
-		if blockerID == "" || blockedID == "" {
-			return "", errors.New("blocker_id and blocked_id are required")
+		taskID := str("task_id")
+		blockedBy := str("blocked_by")
+		if taskID == "" || blockedBy == "" {
+			return "", errors.New("task_id and blocked_by are required")
 		}
-		if err := svc.RemoveDep(blockerID, blockedID); err != nil {
+		if err := svc.RemoveDep(taskID, blockedBy); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf(`{"blocker": "%s", "blocked": "%s", "removed": true}`, blockerID, blockedID), nil
+		return fmt.Sprintf(`{"blocker": "%s", "blocked": "%s", "removed": true}`, taskID, blockedBy), nil
 
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)

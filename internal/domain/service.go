@@ -187,6 +187,10 @@ func (s *Service) ListSprints(projectID string) ([]*Sprint, error) {
 	return s.store.ListSprints(projectID)
 }
 
+func (s *Service) GetSprint(id int64) (*Sprint, error) {
+	return s.store.GetSprint(id)
+}
+
 func (s *Service) ActivateSprint(id int64) error {
 	sp, err := s.store.GetSprint(id)
 	if err != nil {

@@ -67,15 +67,15 @@ func TestAddRemoveBlocker(t *testing.T) {
 	require.NoError(t, err)
 
 	result, err := mcp.CallTool(svc, "add_blocker", map[string]any{
-		"blocker_id": "TST-001",
-		"blocked_id": "TST-002",
+		"task_id":    "TST-001",
+		"blocked_by": "TST-002",
 	})
 	require.NoError(t, err)
 	require.Contains(t, result, `"added": true`)
 
 	result, err = mcp.CallTool(svc, "remove_blocker", map[string]any{
-		"blocker_id": "TST-001",
-		"blocked_id": "TST-002",
+		"task_id":    "TST-001",
+		"blocked_by": "TST-002",
 	})
 	require.NoError(t, err)
 	require.Contains(t, result, `"removed": true`)
@@ -94,4 +94,14 @@ func TestRPCDispatch(t *testing.T) {
 	req = mcp.Request{JSONRPC: "2.0", ID: json.RawMessage(`2`), Method: "tools/list", Params: json.RawMessage(`{}`)}
 	resp = mcp.Dispatch(svc, req)
 	require.Nil(t, resp.Error)
+
+	// notifications/initialized — no response (nil)
+	notif := mcp.Request{JSONRPC: "2.0", Method: "notifications/initialized", Params: json.RawMessage(`{}`)}
+	require.Nil(t, mcp.Dispatch(svc, notif))
+
+	// unknown method → -32601
+	req = mcp.Request{JSONRPC: "2.0", ID: json.RawMessage(`3`), Method: "no/such/method", Params: json.RawMessage(`{}`)}
+	resp = mcp.Dispatch(svc, req)
+	require.NotNil(t, resp.Error)
+	require.Equal(t, -32601, resp.Error.Code)
 }

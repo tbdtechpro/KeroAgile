@@ -81,6 +81,47 @@ func TestAddRemoveBlocker(t *testing.T) {
 	require.Contains(t, result, `"removed": true`)
 }
 
+func TestToolValidationErrors(t *testing.T) {
+	svc := testSvc(t)
+
+	_, err := mcp.CallTool(svc, "get_task", map[string]any{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "task_id")
+
+	_, err = mcp.CallTool(svc, "create_task", map[string]any{"project_id": "X"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "title")
+
+	_, err = mcp.CallTool(svc, "add_blocker", map[string]any{"task_id": "X"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "blocked_by")
+}
+
+func TestUpdateTaskMutation(t *testing.T) {
+	svc := testSvc(t)
+	require.NoError(t, svc.CreateProject("TST", "Test", ""))
+	_, err := svc.CreateTask("original title", "", "TST", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+
+	result, err := mcp.CallTool(svc, "update_task", map[string]any{
+		"task_id": "TST-001",
+		"title":   "updated title",
+	})
+	require.NoError(t, err)
+	require.Contains(t, result, "updated title")
+	require.NotContains(t, result, "original title")
+}
+
+func TestToolsListCount(t *testing.T) {
+	svc := testSvc(t)
+	req := mcp.Request{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: "tools/list", Params: json.RawMessage(`{}`)}
+	resp := mcp.Dispatch(svc, req)
+	require.Nil(t, resp.Error)
+	tools, ok := resp.Result.(map[string]any)["tools"]
+	require.True(t, ok)
+	require.Len(t, tools, 12)
+}
+
 func TestRPCDispatch(t *testing.T) {
 	svc := testSvc(t)
 

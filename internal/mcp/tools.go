@@ -9,7 +9,6 @@ import (
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
-// toolDef describes one MCP tool.
 type toolDef struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
@@ -133,7 +132,6 @@ func toolList() []toolDef {
 	}
 }
 
-// CallTool dispatches a tool call by name and returns JSON text (exported for testing).
 func CallTool(svc *domain.Service, name string, args map[string]any) (string, error) {
 	str := func(key string) string {
 		if v, ok := args[key].(string); ok {
@@ -287,7 +285,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if err := svc.DeleteTask(tid); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf(`{"deleted": "%s"}`, tid), nil
+		return toJSON(map[string]any{"deleted": tid})
 
 	case "link_branch":
 		tid := str("task_id")
@@ -298,7 +296,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if err := svc.LinkBranch(tid, branch); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf(`{"linked": "%s", "branch": "%s"}`, tid, branch), nil
+		return toJSON(map[string]any{"linked": tid, "branch": branch})
 
 	case "list_users":
 		users, err := svc.ListUsers()
@@ -358,7 +356,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if err := svc.AddDep(taskID, blockedBy); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf(`{"blocker": "%s", "blocked": "%s", "added": true}`, taskID, blockedBy), nil
+		return toJSON(map[string]any{"blocker": taskID, "blocked": blockedBy, "added": true})
 
 	case "remove_blocker":
 		taskID := str("task_id")
@@ -369,7 +367,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if err := svc.RemoveDep(taskID, blockedBy); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf(`{"blocker": "%s", "blocked": "%s", "removed": true}`, taskID, blockedBy), nil
+		return toJSON(map[string]any{"blocker": taskID, "blocked": blockedBy, "removed": true})
 
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)

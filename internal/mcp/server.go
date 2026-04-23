@@ -10,7 +10,6 @@ import (
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
-// Request is a JSON-RPC 2.0 request (exported for testing).
 type Request struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id"`
@@ -18,7 +17,6 @@ type Request struct {
 	Params  json.RawMessage `json:"params"`
 }
 
-// Response is a JSON-RPC 2.0 response (exported for testing).
 type Response struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
@@ -26,7 +24,6 @@ type Response struct {
 	Error   *RPCError       `json:"error,omitempty"`
 }
 
-// RPCError is a JSON-RPC 2.0 error object (exported for testing).
 type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -39,7 +36,6 @@ const (
 	codeAppError       = -32000
 )
 
-// Serve runs the MCP JSON-RPC 2.0 server loop over stdin/stdout.
 func Serve(svc *domain.Service) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
@@ -57,7 +53,6 @@ func Serve(svc *domain.Service) error {
 	return scanner.Err()
 }
 
-// Dispatch handles a single JSON-RPC request (exported for testing).
 // Returns nil for JSON-RPC notifications that require no response.
 func Dispatch(svc *domain.Service, req Request) *Response {
 	base := &Response{JSONRPC: "2.0", ID: req.ID}
@@ -95,8 +90,6 @@ func Dispatch(svc *domain.Service, req Request) *Response {
 	return base
 }
 
-
-// DetectProjectID finds the KeroAgile project whose repo_path matches the current git remote.
 func DetectProjectID(svc *domain.Service) string {
 	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
 	if err != nil {

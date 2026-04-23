@@ -12,6 +12,7 @@ func testStore(t *testing.T) *store.Store {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
-	return store.New(db)
+	s := store.New(db)
+	t.Cleanup(func() { s.Close() })
+	return s
 }

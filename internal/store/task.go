@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -98,7 +99,7 @@ func (s *Store) ListTasks(projectID string, f domain.TaskFilters) ([]*domain.Tas
 }
 
 func (s *Store) UpdateTask(t *domain.Task) error {
-	_, err := s.db.Exec(
+	res, err := s.db.Exec(
 		`UPDATE tasks SET sprint_id=?,title=?,description=?,status=?,priority=?,
 		 points=?,assignee_id=?,branch=?,pr_number=?,pr_merged=?,labels=?,updated_at=?
 		 WHERE id=?`,
@@ -109,7 +110,14 @@ func (s *Store) UpdateTask(t *domain.Task) error {
 		t.UpdatedAt.UTC().Format(time.RFC3339),
 		t.ID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) DeleteTask(id string) error {
@@ -130,6 +138,9 @@ func (s *Store) GetTaskDeps(taskID string) (blockers, blocking []string, err err
 		}
 		blockers = append(blockers, id)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
 
 	rows2, err := s.db.Query(`SELECT blocked_id FROM task_deps WHERE blocker_id=?`, taskID)
 	if err != nil {
@@ -143,7 +154,7 @@ func (s *Store) GetTaskDeps(taskID string) (blockers, blocking []string, err err
 		}
 		blocking = append(blocking, id)
 	}
-	return blockers, blocking, nil
+	return blockers, blocking, rows2.Err()
 }
 
 func (s *Store) AddDep(blockerID, blockedID string) error {
@@ -199,8 +210,12 @@ func scanTask(r rowScanner) (*domain.Task, error) {
 		v := int(prNumber.Int64)
 		t.PRNumber = &v
 	}
-	t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	t.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	if t.CreatedAt, err = time.Parse(time.RFC3339, createdAt); err != nil {
+		return nil, fmt.Errorf("parse created_at: %w", err)
+	}
+	if t.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt); err != nil {
+		return nil, fmt.Errorf("parse updated_at: %w", err)
+	}
 	return &t, nil
 }
 

@@ -96,6 +96,35 @@ func TestTaskDeps(t *testing.T) {
 	blockers2, _, err := s.GetTaskDeps("KA-002")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"KA-001"}, blockers2)
+
+	// ON DELETE CASCADE: deleting KA-001 must remove its dep rows
+	require.NoError(t, s.DeleteTask("KA-001"))
+	blockers3, blocking3, err := s.GetTaskDeps("KA-002")
+	require.NoError(t, err)
+	assert.Empty(t, blockers3)
+	assert.Empty(t, blocking3)
+}
+
+func TestTaskListSprintFilter(t *testing.T) {
+	s := testStore(t)
+	seedProject(t, s)
+
+	sp, err := s.CreateSprint(&domain.Sprint{ProjectID: "KA", Name: "Sprint 1", Status: domain.SprintPlanning})
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	spID := sp.ID
+	for _, task := range []*domain.Task{
+		{ID: "KA-001", ProjectID: "KA", Title: "In sprint", Status: domain.StatusBacklog, Priority: domain.PriorityMedium, SprintID: &spID, CreatedAt: now, UpdatedAt: now},
+		{ID: "KA-002", ProjectID: "KA", Title: "Backlog", Status: domain.StatusBacklog, Priority: domain.PriorityMedium, CreatedAt: now, UpdatedAt: now},
+	} {
+		require.NoError(t, s.CreateTask(task))
+	}
+
+	list, err := s.ListTasks("KA", domain.TaskFilters{SprintID: &spID})
+	require.NoError(t, err)
+	assert.Len(t, list, 1)
+	assert.Equal(t, "KA-001", list[0].ID)
 }
 
 func TestNextTaskSeq(t *testing.T) {

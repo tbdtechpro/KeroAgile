@@ -82,7 +82,7 @@ Never use `t.Fatal` inside a goroutine. Prefer `require.NoError` over `assert.No
 
 ## Known bugs (fix before v0.2.0)
 
-- **`go.mod` module path is wrong** — currently `module keroagile`; must become `module github.com/tbdtechpro/keroagile`. Global find-and-replace across all `*.go` import paths. Do this first before any other v0.2.0 work.
+- ~~`go.mod` module path~~ — **fixed in v0.1.1**: changed from `module keroagile` to `module github.com/tbdtechpro/KeroAgile` (capital K, capital A to match the GitHub repo). All internal imports updated.
 - Store calls inside `App.Update` are synchronous (SQLite in-process, fast enough for local use)
 - Drag ghost uses raw screen Y, not panel-relative Y — visual artifact during drag
 - Drag ghost adds a line without removing the original — may clip in short panels

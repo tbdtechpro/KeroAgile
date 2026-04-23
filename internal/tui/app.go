@@ -422,6 +422,9 @@ func (a App) doUpdateTask(msg forms.SavedMsg, t *domain.Task) tea.Cmd {
 	} else {
 		updated.AssigneeID = nil
 	}
+	// TODO(v0.2.0): msg.Blocks and msg.BlockedBy are not persisted here.
+	// Reconciling dep changes requires calling svc.AddDep/RemoveDep to diff
+	// old vs new sets. Tracked in docs/roadmap.md §2.2 blocker management.
 	projectID := t.ProjectID
 	return func() tea.Msg {
 		if _, err := a.svc.UpdateTask(&updated); err != nil {

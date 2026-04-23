@@ -370,41 +370,98 @@ A browser-based UI that matches the TUI feature set, making KeroAgile accessible
 
 ### 5.1 Architecture
 
-Prerequisites: API server (§3.3) must exist first — the web UI is a pure frontend against the REST API.
+**Prerequisites:** API server (§3.3) must exist first — the web UI is a pure frontend against the REST API.
 
-**Tech choices to decide:**
-- **Vanilla HTML + htmx** — minimal JS, server-rendered fragments, pairs well with Go templates. Fastest to ship, lowest maintenance. Recommended for v1.
-- **React/Vue SPA** — more interactive but adds a full frontend build pipeline.
-- **Templ + Go** — type-safe Go HTML templates, stays in the Go ecosystem.
+**Tech stack: React (confirmed)**
 
-Recommended path: Go templates + htmx for v1, migrate to Templ as a refactor.
+React is chosen for consistency with the broader Kero Apps ecosystem, where React is the standard web UX layer across all projects. Shared patterns, components, and developer familiarity outweigh the simplicity advantage of htmx for a long-lived multi-app family.
+
+**React adds zero complexity for end users.** The distinction matters:
+
+- The React app is built once at release time (`npm run build`), producing static files
+- Those files are embedded into the Go binary at compile time via `go:embed`
+- Users download one binary or run `docker compose up` — no Node.js, no npm, nothing JavaScript-related is visible or required
+- Contributors working on the frontend need Node, which is expected
+
+**Tooling decisions:**
+- **Build tool:** Vite (fast, minimal config, standard for modern React)
+- **Language:** TypeScript (safer for a long-lived codebase)
+- **API state:** TanStack Query (React Query) for server state, caching, and background refetch
+- **Drag-and-drop:** dnd kit (actively maintained, accessible, works with React 18)
+- **Styling:** Tailwind CSS (consistent with self-contained builds, no runtime CSS-in-JS overhead)
+
+**Source layout:**
+```
+web/                    React app source (Vite project)
+  src/
+    components/         Board, Sidebar, Detail, TaskForm, etc.
+    api/                typed fetch wrappers for each /api/ endpoint
+    hooks/              useProjects, useTasks, useSprint, etc.
+  dist/                 built output (git-ignored; produced by npm run build)
+cmd/keroagile/
+  web.go               go:embed web/dist → serves / and /api/
+```
+
+**Multi-stage Docker build** (fully transparent to the user):
+
+```dockerfile
+# Stage 1 — build React (Node never reaches the final image)
+FROM node:22-alpine AS frontend
+WORKDIR /app/web
+COPY web/package*.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+# Stage 2 — build Go binary with embedded frontend
+FROM golang:1.24-alpine AS builder
+WORKDIR /app
+COPY . .
+COPY --from=frontend /app/web/dist ./web/dist
+RUN go build -o KeroAgile ./cmd/keroagile/
+
+# Stage 3 — minimal runtime (~20MB image, no Node, no npm)
+FROM alpine:3.21
+COPY --from=builder /app/KeroAgile /usr/local/bin/KeroAgile
+ENTRYPOINT ["KeroAgile"]
+```
+
+**goreleaser** runs `npm ci && npm run build` as a `before.hooks` step before `go build`, so pre-built binaries on GitHub Releases also have the frontend baked in. Users who install via binary or `go install` get the full web UI with no extra steps.
 
 ### 5.2 Feature parity with TUI
 
-| TUI feature | Web equivalent |
-|-------------|---------------|
-| Three-panel layout | Responsive three-column layout (sidebar collapses on mobile) |
-| Keyboard nav | Keyboard shortcuts via JS `keydown` listeners |
-| Drag-and-drop task move | HTML5 drag-and-drop or a library (SortableJS) |
-| Task form overlay | Modal dialog |
-| Detail panel | Slide-in drawer or right column |
-| PR auto-transition | Server-Sent Events or WebSocket push from server |
-| Sprint filter | Dropdown or tab bar |
-| Status bar / notifs | Toast notifications |
+| TUI feature | Web equivalent | Notes |
+|-------------|---------------|-------|
+| Three-panel layout | Responsive three-column layout | Sidebar collapses on mobile |
+| Keyboard nav (j/k, tab, n/e/m/d) | `keydown` shortcuts via React hook | Same bindings where sensible |
+| Drag-and-drop task move | dnd kit | Easier in React than TUI |
+| Task form overlay | Modal dialog | React portal |
+| Detail panel | Right column / slide-in drawer | |
+| PR auto-transition | Server-Sent Events from API server | Push, not poll |
+| Sprint filter toggle | Tab bar or dropdown | |
+| "My tasks" filter | Toggle button, resolves via JWT identity | |
+| Status bar / notifs | Toast notifications | |
+| User display (🤖/👤) | Same prefix in UI | |
 
 ### 5.3 Served from the same binary
 
-Add a `web` subcommand that serves both the API and the web UI from one process:
+The `serve` subcommand (§3.3) already handles the API. Extend it to also serve the embedded React app:
 
 ```bash
-KeroAgile web --addr :7435   # serves UI at / and API at /api/
+KeroAgile serve --addr :7432   # API at /api/, web UI at /
 ```
 
-Static assets embedded via `go:embed`. No separate frontend build step in the binary — assets are pre-built and committed, or built as part of the goreleaser pipeline.
+Or a dedicated subcommand for local-only use without the full server auth stack:
+
+```bash
+KeroAgile web --addr :7435     # single-user local mode
+```
+
+Static assets embedded via `go:embed`. Zero external dependencies at runtime.
 
 ### 5.4 Mobile / home network access
 
-With the web interface running on a homelab server, any device on the home network (phone, tablet, laptop) can access the board at `http://homelab:7435` in a browser. Responsive layout required.
+With the web interface running on the homelab server, any device on the home network — phone, tablet, laptop — can access the full board at `http://homelab:7432` in a browser. Tailwind's responsive utilities handle the layout shift for narrower screens; the sidebar collapses to a drawer on mobile.
 
 ---
 

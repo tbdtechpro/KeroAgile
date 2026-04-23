@@ -163,6 +163,7 @@ Adds an optional HTTP API server that exposes all domain service operations over
 
 **Design decisions (confirmed):**
 - Port: **7432**
+- Deployment target: **small team** — designed for a handful of named users (not anonymous public access). The current solo user will add team members over time; the auth system should support this from day one without needing migration.
 - Data model: **one shared board** — all users see the same projects and tasks; users filter to their own work via a `--mine` / `@me` shorthand
 - Auth: **per-user identity with admin management** — no email validation, no 2FA, no OAuth
 
@@ -290,6 +291,23 @@ KeroAgile should integrate natively with Claude Code so that an AI agent working
 Add a `mcp` subcommand that starts a JSON-RPC 2.0 server over stdio, implementing the MCP tool protocol that Claude Code speaks. The server wraps `domain.Service` directly — no new data layer required.
 
 New package: `internal/mcp/server.go` — tool registration, request dispatch, response formatting.
+
+**Project auto-detection (confirmed behavior):**
+
+When a KeroAgile MCP tool is invoked from within a git repo, the MCP server resolves the active project automatically:
+
+1. Read the git remote URL of the current working directory (via `git remote get-url origin`)
+2. Match against `projects.repo_path` in the database (exact or suffix match)
+3. If a match is found, use that project as the default `project_id` for tools that accept it
+4. If no match is found (project exists but `--repo` was not set), return a structured error:
+   ```
+   Could not auto-detect project. Run:
+     KeroAgile project add <id> --repo <path-or-remote-url>
+   to link this repository to a project.
+   ```
+5. If `project_id` is explicitly provided in the tool call, skip detection and use it directly
+
+This means `create_task` and `list_tasks` work without a `project_id` argument when called from a linked repo — Claude never needs to ask the user which project they mean.
 
 **Tools to expose:**
 

@@ -19,7 +19,6 @@ type Board struct {
 	tasks       []*domain.Task
 	flatIndex   []int                 // maps linear cursor to tasks slice index
 	cursor      int                   // linear cursor across all visible tasks
-	sectionTops map[domain.Status]int // Y offset of each status header (for drag)
 	drag        *DragState
 	focused     bool
 	width       int
@@ -112,7 +111,7 @@ func (b Board) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseActionMotion:
 		if b.drag.Active() {
 			b.drag.CurrentY = msg.Y
-			b.drag.TargetStatus = resolveTargetStatus(msg.Y, b.sectionTops)
+			b.drag.TargetStatus = resolveTargetStatus(msg.Y, b.computeSectionTops())
 		}
 	case tea.MouseActionRelease:
 		if b.drag.Active() {
@@ -127,20 +126,73 @@ func (b Board) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return b, nil
 }
 
-// taskAtY converts a panel-relative Y coordinate to a flat cursor index.
-// Returns -1 if no task is at that Y. sectionTops must be populated by a prior View() call.
+// taskAtY converts a panel-relative Y (1-based, inside border) to a flat cursor index.
+// Returns -1 if Y doesn't land on a task row.
 func (b Board) taskAtY(y int) int {
-	// Linear scan of flatIndex using rendered Y positions is complex;
-	// this simplified version returns -1 (drag start will still work via mouse motion).
+	tasksByStatus := make(map[domain.Status][]*domain.Task)
+	for _, t := range b.tasks {
+		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
+	}
+
+	flatPos := make(map[string]int) // task ID → flat cursor index
+	for fi, idx := range b.flatIndex {
+		flatPos[b.tasks[idx].ID] = fi
+	}
+
+	row := 1 // start after top border
+	for _, st := range statusOrder {
+		tsks := tasksByStatus[st]
+		row++ // header line
+		row++ // divider line
+		if st == domain.StatusDone && len(tsks) > 3 {
+			if y == row {
+				return -1 // collapsed line, not a selectable task
+			}
+			row++
+		} else {
+			for _, t := range tsks {
+				if y == row {
+					if fi, ok := flatPos[t.ID]; ok {
+						return fi
+					}
+				}
+				row++
+			}
+		}
+		row++ // blank line between sections
+	}
 	return -1
+}
+
+// computeSectionTops returns a map of status → Y position of that section's header,
+// using the same layout logic as View().
+func (b Board) computeSectionTops() map[domain.Status]int {
+	tasksByStatus := make(map[domain.Status][]*domain.Task)
+	for _, t := range b.tasks {
+		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
+	}
+
+	tops := make(map[domain.Status]int)
+	row := 1 // start after top border
+	for _, st := range statusOrder {
+		tops[st] = row
+		tsks := tasksByStatus[st]
+		row++ // header
+		row++ // divider
+		if st == domain.StatusDone && len(tsks) > 3 {
+			row++ // collapsed line
+		} else {
+			row += len(tsks)
+		}
+		row++ // blank
+	}
+	return tops
 }
 
 func (b Board) Init() tea.Cmd { return nil }
 
 func (b Board) View() string {
-	sectionTops := make(map[domain.Status]int)
 	var lines []string
-	y := 0
 
 	tasksByStatus := make(map[domain.Status][]*domain.Task)
 	for _, t := range b.tasks {
@@ -159,16 +211,12 @@ func (b Board) View() string {
 			fmt.Sprintf("◆ %s  (%d)", st.Label(), len(tsks)),
 		)
 		lines = append(lines, header)
-		sectionTops[st] = y
-		y++
 
 		divider := styles.Muted.Render("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄")
 		lines = append(lines, divider)
-		y++
 
 		if st == domain.StatusDone && len(tsks) > 3 {
 			lines = append(lines, styles.Muted.Render(fmt.Sprintf("  %d tasks  ▸ collapsed", len(tsks))))
-			y++
 		} else {
 			for _, t := range tsks {
 				isCursor := flatPos[t.ID] == b.cursor && b.focused
@@ -189,17 +237,10 @@ func (b Board) View() string {
 				} else {
 					lines = append(lines, styles.NormalRow.Render(" "+row))
 				}
-				y++
 			}
 		}
 		lines = append(lines, "")
-		y++
 	}
-
-	// Store sectionTops on b for drag resolution (note: b is a value, so this
-	// is stored for the lifetime of this View() call only; drag.go uses the
-	// sectionTops passed by the App on mouse events)
-	b.sectionTops = sectionTops
 
 	content := ""
 	for i, l := range lines {

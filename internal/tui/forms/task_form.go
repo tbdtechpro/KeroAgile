@@ -249,6 +249,16 @@ func (f TaskForm) validate() string {
 	if strings.TrimSpace(f.titleInput.Value()) == "" {
 		return "title is required"
 	}
+	switch domain.Priority(strings.TrimSpace(f.priorityInput.Value())) {
+	case domain.PriorityLow, domain.PriorityMedium, domain.PriorityHigh, domain.PriorityCritical:
+	default:
+		return "invalid priority — use: low  medium  high  critical"
+	}
+	switch domain.Status(strings.TrimSpace(f.statusInput.Value())) {
+	case domain.StatusBacklog, domain.StatusTodo, domain.StatusInProgress, domain.StatusReview, domain.StatusDone:
+	default:
+		return "invalid status — use: backlog  todo  in_progress  review  done"
+	}
 	return ""
 }
 

@@ -43,3 +43,9 @@ type showFormMsg struct{ task *domain.Task }
 
 // statusNotifMsg shows a transient notification in the status bar.
 type statusNotifMsg struct{ text string }
+
+// projectsLoadedMsg carries a fresh project list after initial load.
+type projectsLoadedMsg struct{ projects []*domain.Project }
+
+// usersLoadedMsg carries a fresh user list after initial load.
+type usersLoadedMsg struct{ users []*domain.User }

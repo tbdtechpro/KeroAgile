@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -83,7 +82,7 @@ func (a App) loadProjects() tea.Cmd {
 		if err != nil {
 			return statusNotifMsg{fmt.Sprintf("error: %v", err)}
 		}
-		return struct{ projects []*domain.Project }{projects}
+		return projectsLoadedMsg{projects}
 	}
 }
 
@@ -93,7 +92,7 @@ func (a App) loadUsers() tea.Cmd {
 		if err != nil {
 			return statusNotifMsg{fmt.Sprintf("error loading users: %v", err)}
 		}
-		return struct{ users []*domain.User }{users}
+		return usersLoadedMsg{users}
 	}
 }
 
@@ -143,18 +142,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		cmds = append(cmds, a.handleMouse(msg)...)
 
-	case struct{ projects []*domain.Project }:
+	case projectsLoadedMsg:
 		a.projects = msg.projects
 		counts := a.buildCounts()
 		a.sidebar = NewSidebar(a.projects, counts, a.sidebarWidth(), a.height-3)
-		if len(a.projects) > 0 {
-			cmds = append(cmds, a.loadTasks(a.projects[0].ID))
-			if p := a.projects[0]; p.RepoPath != "" {
+		for _, p := range a.projects {
+			if p.RepoPath != "" {
 				a.gitClients[p.ID] = git.New(p.RepoPath)
 			}
 		}
+		if len(a.projects) > 0 {
+			cmds = append(cmds, a.loadTasks(a.projects[0].ID))
+		}
 
-	case struct{ users []*domain.User }:
+	case usersLoadedMsg:
 		a.users = msg.users
 		a.detail = a.detail.SetUsers(msg.users)
 
@@ -368,7 +369,10 @@ func (a App) handleFormSaved(msg forms.SavedMsg) (tea.Model, tea.Cmd) {
 			t.Status = msg.Status
 			t.Labels = msg.Labels
 			if msg.AssigneeID != "" {
-				t.AssigneeID = &msg.AssigneeID
+				s := msg.AssigneeID
+				t.AssigneeID = &s
+			} else {
+				t.AssigneeID = nil
 			}
 			t.Points = msg.Points
 			_, err = a.svc.UpdateTask(t)
@@ -488,8 +492,3 @@ func (a App) View() string {
 // Ensure App implements tea.Model
 var _ tea.Model = (*App)(nil)
 
-func logErr(err error) {
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-	}
-}

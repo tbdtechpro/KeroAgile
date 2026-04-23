@@ -160,8 +160,10 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return f, func() tea.Msg { return f.buildSavedMsg() }
 		case "tab":
 			f = f.nextField()
+			return f, nil
 		case "shift+tab":
 			f = f.prevField()
+			return f, nil
 		}
 	}
 

@@ -169,13 +169,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadTasks(msg.projectID))
 
 	case taskSelectedMsg:
-		// Fix 4: search cache instead of calling svc.GetTask
+		found := false
 		for _, t := range a.currentTasks {
 			if t.ID == msg.taskID {
+				found = true
 				a.detail = a.detail.SetTask(t)
 				cmds = append(cmds, a.refreshGit(t))
 				break
 			}
+		}
+		if !found {
+			a.setStatus("task not found in cache — press r to refresh")
 		}
 
 	case taskMovedMsg:
@@ -263,13 +267,17 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 	case "n":
 		a.openNewForm()
 	case "e":
-		// Fix 5: search cache instead of calling svc.GetTask
 		if id := a.board.SelectedTaskID(); id != "" {
+			found := false
 			for _, t := range a.currentTasks {
 				if t.ID == id {
+					found = true
 					a.openEditForm(t)
 					break
 				}
+			}
+			if !found {
+				a.setStatus("task not found in cache — press r to refresh")
 			}
 		}
 	case "m":
@@ -451,16 +459,17 @@ func (a App) doMarkPRMerged(id, projectID string) tea.Cmd {
 
 func (a App) refreshGit(t *domain.Task) tea.Cmd {
 	client, ok := a.gitClients[t.ProjectID]
-	if !ok || t.Branch == "" {
+	branch := t.Branch
+	if !ok || branch == "" {
 		return nil
 	}
 	return func() tea.Msg {
-		commits, err := client.CommitLog(t.Branch, 5)
+		commits, err := client.CommitLog(branch, 5)
 		if err != nil {
 			return gitRefreshedMsg{}
 		}
-		branch, _ := client.CurrentBranch()
-		return gitRefreshedMsg{branch: branch, commits: commits}
+		cur, _ := client.CurrentBranch()
+		return gitRefreshedMsg{branch: cur, commits: commits}
 	}
 }
 
@@ -495,7 +504,7 @@ func (a App) pollCurrentTaskGit() tea.Cmd {
 	return func() tea.Msg {
 		status, err := git.PRView(repoPath, prNum)
 		if err != nil {
-			return nil
+			return statusNotifMsg{fmt.Sprintf("PR check failed: %v", err)}
 		}
 		return prStatusMsg{taskID: taskID, prStatus: status}
 	}
@@ -523,7 +532,7 @@ func (a App) pollPRs() []tea.Cmd {
 		cmds = append(cmds, func() tea.Msg {
 			status, err := git.PRView(repoPath, prNum)
 			if err != nil {
-				return nil
+				return statusNotifMsg{fmt.Sprintf("PR check failed: %v", err)}
 			}
 			return prStatusMsg{taskID: taskID, prStatus: status}
 		})

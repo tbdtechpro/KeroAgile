@@ -32,15 +32,6 @@ type prMergedMsg struct{ taskID string }
 // tickMsg is sent by the 60-second PR polling ticker.
 type tickMsg struct{}
 
-// formSavedMsg is sent when the task form is submitted with a new/updated task.
-type formSavedMsg struct{ task *domain.Task }
-
-// formCancelledMsg is sent when the task form is dismissed.
-type formCancelledMsg struct{}
-
-// showFormMsg opens the task form. task is nil for new, non-nil for edit.
-type showFormMsg struct{ task *domain.Task }
-
 // statusNotifMsg shows a transient notification in the status bar.
 type statusNotifMsg struct{ text string }
 

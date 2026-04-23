@@ -229,8 +229,8 @@ func (b Board) View() string {
 
 				idStr := styles.Muted.Render(t.ID)
 				titleStr := t.Title
-				if b.width > 23 && len(titleStr) > b.width-20 {
-					titleStr = titleStr[:b.width-23] + "..."
+				if r := []rune(titleStr); b.width > 23 && len(r) > b.width-20 {
+					titleStr = string(r[:b.width-23]) + "..."
 				}
 
 				if b.drag.Active() && b.drag.TaskID == t.ID {

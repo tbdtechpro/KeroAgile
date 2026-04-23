@@ -180,8 +180,9 @@ func detailField(label, value string) string {
 }
 
 func truncate(s string, n int) string {
-	if n <= 0 || len(s) <= n {
+	r := []rune(s)
+	if n <= 0 || len(r) <= n {
 		return s
 	}
-	return s[:n-3] + "..."
+	return string(r[:n-3]) + "..."
 }

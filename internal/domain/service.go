@@ -196,12 +196,9 @@ func (s *Service) ActivateSprint(id int64) error {
 	return s.store.UpdateSprint(sp)
 }
 
-func (s *Service) CreateUser(id, displayName string, isAgent bool) error {
-	return s.store.CreateUser(&User{
-		ID:          id,
-		DisplayName: displayName,
-		IsAgent:     isAgent,
-	})
+func (s *Service) CreateUser(id, displayName string, isAgent bool) (*User, error) {
+	u := &User{ID: id, DisplayName: displayName, IsAgent: isAgent}
+	return u, s.store.CreateUser(u)
 }
 
 func (s *Service) ListUsers() ([]*User, error) {

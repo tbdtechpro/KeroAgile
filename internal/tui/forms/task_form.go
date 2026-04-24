@@ -23,6 +23,7 @@ const (
 	fieldPoints
 	fieldStatus
 	fieldLabels
+	fieldSprint   // inserted between labels and blocks
 	fieldBlocks
 	fieldBlockedBy
 	fieldCount
@@ -41,6 +42,8 @@ type TaskForm struct {
 	pointsInput   textinput.Model
 	statusInput   textinput.Model
 	labelsInput   textinput.Model
+	sprints       []*domain.Sprint
+	sprintInput   textinput.Model
 	blocksInput   textinput.Model
 	blockedByIn   textinput.Model
 
@@ -59,6 +62,7 @@ type SavedMsg struct {
 	Points      *int
 	Status      domain.Status
 	Labels      []string
+	SprintID    *int64
 	Blocks      []string
 	BlockedBy   []string
 	IsNew       bool
@@ -68,7 +72,7 @@ type SavedMsg struct {
 // CancelledMsg is emitted when the form is dismissed.
 type CancelledMsg struct{}
 
-func New(projectID string, users []*domain.User, task *domain.Task, width, height int) TaskForm {
+func New(projectID string, users []*domain.User, task *domain.Task, width, height int, sprints []*domain.Sprint) TaskForm {
 	f := TaskForm{
 		task:      task,
 		projectID: projectID,
@@ -107,6 +111,11 @@ func New(projectID string, users []*domain.User, task *domain.Task, width, heigh
 	f.labelsInput.Placeholder = "auth, backend"
 	f.labelsInput.Width = 20
 
+	f.sprints = sprints
+	f.sprintInput = textinput.New()
+	f.sprintInput.Placeholder = "sprint ID or name"
+	f.sprintInput.Width = 20
+
 	f.blocksInput = textinput.New()
 	f.blocksInput.Placeholder = "KA-001, KA-002"
 	f.blocksInput.Width = 20
@@ -127,6 +136,17 @@ func New(projectID string, users []*domain.User, task *domain.Task, width, heigh
 		}
 		f.statusInput.SetValue(string(task.Status))
 		f.labelsInput.SetValue(strings.Join(task.Labels, ", "))
+		if task.SprintID != nil {
+			for _, sp := range sprints {
+				if sp.ID == *task.SprintID {
+					f.sprintInput.SetValue(sp.Name)
+					break
+				}
+			}
+			if f.sprintInput.Value() == "" {
+				f.sprintInput.SetValue(fmt.Sprintf("%d", *task.SprintID))
+			}
+		}
 		f.blocksInput.SetValue(strings.Join(task.Blocking, ", "))
 		f.blockedByIn.SetValue(strings.Join(task.Blockers, ", "))
 	} else {
@@ -183,6 +203,8 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		f.statusInput, cmd = f.statusInput.Update(msg)
 	case fieldLabels:
 		f.labelsInput, cmd = f.labelsInput.Update(msg)
+	case fieldSprint:
+		f.sprintInput, cmd = f.sprintInput.Update(msg)
 	case fieldBlocks:
 		f.blocksInput, cmd = f.blocksInput.Update(msg)
 	case fieldBlockedBy:
@@ -218,6 +240,7 @@ func (f *TaskForm) blurAll() {
 	f.pointsInput.Blur()
 	f.statusInput.Blur()
 	f.labelsInput.Blur()
+	f.sprintInput.Blur()
 	f.blocksInput.Blur()
 	f.blockedByIn.Blur()
 }
@@ -238,6 +261,8 @@ func (f *TaskForm) focusCurrent() {
 		f.statusInput.Focus()
 	case fieldLabels:
 		f.labelsInput.Focus()
+	case fieldSprint:
+		f.sprintInput.Focus()
 	case fieldBlocks:
 		f.blocksInput.Focus()
 	case fieldBlockedBy:
@@ -258,6 +283,11 @@ func (f TaskForm) validate() string {
 	case domain.StatusBacklog, domain.StatusTodo, domain.StatusInProgress, domain.StatusReview, domain.StatusDone:
 	default:
 		return "invalid status — use: backlog  todo  in_progress  review  done"
+	}
+	if raw := strings.TrimSpace(f.sprintInput.Value()); raw != "" {
+		if err := f.resolveSprintID(raw); err != nil {
+			return err.Error()
+		}
 	}
 	return ""
 }
@@ -284,6 +314,19 @@ func (f TaskForm) buildSavedMsg() SavedMsg {
 			msg.Labels = append(msg.Labels, l)
 		}
 	}
+	if raw := strings.TrimSpace(f.sprintInput.Value()); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			msg.SprintID = &n
+		} else {
+			lower := strings.ToLower(raw)
+			for _, sp := range f.sprints {
+				if strings.ToLower(sp.Name) == lower {
+					msg.SprintID = &sp.ID
+					break
+				}
+			}
+		}
+	}
 	for _, b := range strings.Split(f.blocksInput.Value(), ",") {
 		if b = strings.TrimSpace(b); b != "" {
 			msg.Blocks = append(msg.Blocks, b)
@@ -305,6 +348,7 @@ func (f TaskForm) View() string {
 	pointsLabel := f.fieldLabel("Points", f.focus == fieldPoints)
 	statusLabel := f.fieldLabel("Status", f.focus == fieldStatus)
 	labelsLabel := f.fieldLabel("Labels", f.focus == fieldLabels)
+	sprintLabel := f.fieldLabel("Sprint", f.focus == fieldSprint)
 	blocksLabel := f.fieldLabel("Blocks", f.focus == fieldBlocks)
 	blockedByLabel := f.fieldLabel("Blocked by", f.focus == fieldBlockedBy)
 
@@ -318,13 +362,14 @@ func (f TaskForm) View() string {
 		errLine = "\n" + styles.Danger.Render("✗ "+f.err)
 	}
 
-	body := fmt.Sprintf("%s\n%s\n%s\n%s\n\n%s\n%s  %s  %s  %s\n\n%s          %s          %s\n%s  %s  %s\n%s\n[tab]next  [shift+tab]prev  [enter]save  [esc]cancel%s",
+	body := fmt.Sprintf("%s\n%s\n%s\n%s\n\n%s\n%s  %s  %s  %s\n\n%s          %s          %s\n%s  %s  %s\n\n%s\n%s\n%s\n[tab]next  [shift+tab]prev  [enter]save  [esc]cancel%s",
 		titleLabel, f.titleInput.View(),
 		descLabel, f.descInput.View(),
 		assigneeLabel+"  "+priorityLabel+"  "+pointsLabel+"  "+statusLabel,
 		f.assigneeInput.View(), f.priorityInput.View(), f.pointsInput.View(), f.statusInput.View(),
 		labelsLabel, blocksLabel, blockedByLabel,
 		f.labelsInput.View(), f.blocksInput.View(), f.blockedByIn.View(),
+		sprintLabel, f.sprintInput.View(),
 		styles.Muted.Render("────────────────────────────────────────────────────────────────"),
 		errLine,
 	)
@@ -348,4 +393,32 @@ func (f TaskForm) fieldLabel(text string, active bool) string {
 		return lipgloss.NewStyle().Foreground(styles.CAccentLt).Bold(true).Render(text)
 	}
 	return styles.Muted.Render(text)
+}
+
+// resolveSprintID resolves the sprint input string to a sprint ID.
+// Returns error when the string matches no sprint or matches multiple by name.
+func (f TaskForm) resolveSprintID(raw string) error {
+	if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		for _, sp := range f.sprints {
+			if sp.ID == n {
+				return nil
+			}
+		}
+		return fmt.Errorf("sprint %d not found", n)
+	}
+	lower := strings.ToLower(raw)
+	var matches int
+	for _, sp := range f.sprints {
+		if strings.ToLower(sp.Name) == lower {
+			matches++
+		}
+	}
+	switch matches {
+	case 0:
+		return fmt.Errorf("unknown sprint")
+	case 1:
+		return nil
+	default:
+		return fmt.Errorf("ambiguous sprint name — use ID")
+	}
 }

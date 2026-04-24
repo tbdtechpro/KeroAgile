@@ -36,6 +36,7 @@ type App struct {
 	projects     []*domain.Project
 	currentTasks []*domain.Task
 	users        []*domain.User
+	sprints      []*domain.Sprint
 
 	statusMsg    string
 	statusExpiry time.Time
@@ -365,13 +366,13 @@ func (a *App) buildCounts() map[string]map[domain.Status]int {
 
 func (a *App) openNewForm() {
 	pid := a.sidebar.SelectedProjectID()
-	f := forms.New(pid, a.users, nil, a.width, a.height)
+	f := forms.New(pid, a.users, nil, a.width, a.height, a.sprints)
 	a.form = &f
 }
 
 func (a *App) openEditForm(t *domain.Task) {
 	pid := a.sidebar.SelectedProjectID()
-	f := forms.New(pid, a.users, t, a.width, a.height)
+	f := forms.New(pid, a.users, t, a.width, a.height, a.sprints)
 	a.form = &f
 }
 

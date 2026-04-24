@@ -16,14 +16,15 @@ var statusOrder = []domain.Status{
 
 // Board is the middle panel showing all tasks grouped by status.
 type Board struct {
-	tasks     []*domain.Task
-	flatIndex []int // maps linear cursor to tasks slice index
-	cursor    int   // linear cursor across all visible tasks
-	drag      *DragState
-	focused   bool
-	width     int
-	height    int
-	panelTop  int // terminal row where the panel's first content line appears (set by App)
+	tasks        []*domain.Task
+	flatIndex    []int // maps linear cursor to tasks slice index
+	cursor       int   // linear cursor across all visible tasks
+	drag         *DragState
+	focused      bool
+	width        int
+	height       int
+	panelTop     int // terminal row where the panel's first content line appears (set by App)
+	sprintHeader string // non-empty when filtering by a specific sprint
 }
 
 func NewBoard(tasks []*domain.Task, width, height int) Board {
@@ -56,6 +57,12 @@ func (b Board) SetSize(w, h int) Board {
 
 func (b Board) SetPanelTop(row int) Board {
 	b.panelTop = row
+	return b
+}
+
+// SetSprintHeader sets the dim header line shown above the board when a sprint filter is active.
+func (b Board) SetSprintHeader(h string) Board {
+	b.sprintHeader = h
 	return b
 }
 
@@ -199,6 +206,10 @@ func (b Board) Init() tea.Cmd { return nil }
 
 func (b Board) View() string {
 	var lines []string
+
+	if b.sprintHeader != "" {
+		lines = append(lines, styles.Muted.Render(b.sprintHeader))
+	}
 
 	tasksByStatus := make(map[domain.Status][]*domain.Task)
 	for _, t := range b.tasks {

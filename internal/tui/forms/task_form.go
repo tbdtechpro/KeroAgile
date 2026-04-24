@@ -23,7 +23,7 @@ const (
 	fieldPoints
 	fieldStatus
 	fieldLabels
-	fieldSprint   // inserted between labels and blocks
+	fieldSprint // inserted between labels and blocks
 	fieldBlocks
 	fieldBlockedBy
 	fieldCount
@@ -37,7 +37,7 @@ type TaskForm struct {
 
 	titleInput    textinput.Model
 	descInput     textarea.Model
-	assigneeInput textinput.Model
+	assigneeIdx   int // 0 = none, 1..len(users) = users[idx-1]
 	priorityInput textinput.Model
 	pointsInput   textinput.Model
 	statusInput   textinput.Model
@@ -72,7 +72,7 @@ type SavedMsg struct {
 // CancelledMsg is emitted when the form is dismissed.
 type CancelledMsg struct{}
 
-func New(projectID string, users []*domain.User, task *domain.Task, width, height int, sprints []*domain.Sprint) TaskForm {
+func New(projectID string, users []*domain.User, defaultID string, task *domain.Task, width, height int, sprints []*domain.Sprint) TaskForm {
 	f := TaskForm{
 		task:      task,
 		projectID: projectID,
@@ -91,9 +91,15 @@ func New(projectID string, users []*domain.User, task *domain.Task, width, heigh
 	f.descInput.SetWidth(width - 10)
 	f.descInput.SetHeight(3)
 
-	f.assigneeInput = textinput.New()
-	f.assigneeInput.Placeholder = "assignee ID"
-	f.assigneeInput.Width = 16
+	// Set assigneeIdx from defaultID for new tasks.
+	if defaultID != "" {
+		for i, u := range users {
+			if u.ID == defaultID {
+				f.assigneeIdx = i + 1
+				break
+			}
+		}
+	}
 
 	f.priorityInput = textinput.New()
 	f.priorityInput.Placeholder = "medium"
@@ -128,7 +134,13 @@ func New(projectID string, users []*domain.User, task *domain.Task, width, heigh
 		f.titleInput.SetValue(task.Title)
 		f.descInput.SetValue(task.Description)
 		if task.AssigneeID != nil {
-			f.assigneeInput.SetValue(*task.AssigneeID)
+			f.assigneeIdx = 0
+			for i, u := range users {
+				if u.ID == *task.AssigneeID {
+					f.assigneeIdx = i + 1
+					break
+				}
+			}
 		}
 		f.priorityInput.SetValue(string(task.Priority))
 		if task.Points != nil {
@@ -184,6 +196,19 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab":
 			f = f.prevField()
 			return f, nil
+		case "left":
+			if f.focus == fieldAssignee {
+				f.assigneeIdx--
+				if f.assigneeIdx < 0 {
+					f.assigneeIdx = len(f.users)
+				}
+				return f, nil
+			}
+		case "right":
+			if f.focus == fieldAssignee {
+				f.assigneeIdx = (f.assigneeIdx + 1) % (len(f.users) + 1)
+				return f, nil
+			}
 		}
 	}
 
@@ -193,8 +218,6 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		f.titleInput, cmd = f.titleInput.Update(msg)
 	case fieldDesc:
 		f.descInput, cmd = f.descInput.Update(msg)
-	case fieldAssignee:
-		f.assigneeInput, cmd = f.assigneeInput.Update(msg)
 	case fieldPriority:
 		f.priorityInput, cmd = f.priorityInput.Update(msg)
 	case fieldPoints:
@@ -235,7 +258,6 @@ func (f TaskForm) prevField() TaskForm {
 func (f *TaskForm) blurAll() {
 	f.titleInput.Blur()
 	f.descInput.Blur()
-	f.assigneeInput.Blur()
 	f.priorityInput.Blur()
 	f.pointsInput.Blur()
 	f.statusInput.Blur()
@@ -251,8 +273,6 @@ func (f *TaskForm) focusCurrent() {
 		f.titleInput.Focus()
 	case fieldDesc:
 		f.descInput.Focus()
-	case fieldAssignee:
-		f.assigneeInput.Focus()
 	case fieldPriority:
 		f.priorityInput.Focus()
 	case fieldPoints:
@@ -296,7 +316,7 @@ func (f TaskForm) buildSavedMsg() SavedMsg {
 	msg := SavedMsg{
 		Title:       strings.TrimSpace(f.titleInput.Value()),
 		Description: f.descInput.Value(),
-		AssigneeID:  strings.TrimSpace(f.assigneeInput.Value()),
+		AssigneeID:  f.selectedAssigneeID(),
 		Priority:    domain.Priority(strings.TrimSpace(f.priorityInput.Value())),
 		Status:      domain.Status(strings.TrimSpace(f.statusInput.Value())),
 		IsNew:       f.task == nil,
@@ -340,6 +360,29 @@ func (f TaskForm) buildSavedMsg() SavedMsg {
 	return msg
 }
 
+func (f TaskForm) selectedAssigneeID() string {
+	if f.assigneeIdx == 0 || f.assigneeIdx > len(f.users) {
+		return ""
+	}
+	return f.users[f.assigneeIdx-1].ID
+}
+
+func (f TaskForm) assigneeView() string {
+	name := "—"
+	if f.assigneeIdx > 0 && f.assigneeIdx <= len(f.users) {
+		u := f.users[f.assigneeIdx-1]
+		if u.IsAgent {
+			name = "🤖 " + u.DisplayName
+		} else {
+			name = "👤 " + u.DisplayName
+		}
+	}
+	if f.focus == fieldAssignee {
+		return lipgloss.NewStyle().Foreground(styles.CAccentLt).Render("‹ " + name + " ›")
+	}
+	return styles.Muted.Render(name)
+}
+
 func (f TaskForm) View() string {
 	titleLabel := f.fieldLabel("Title", f.focus == fieldTitle)
 	descLabel := f.fieldLabel("Description", f.focus == fieldDesc)
@@ -362,11 +405,11 @@ func (f TaskForm) View() string {
 		errLine = "\n" + styles.Danger.Render("✗ "+f.err)
 	}
 
-	body := fmt.Sprintf("%s\n%s\n%s\n%s\n\n%s\n%s  %s  %s  %s\n\n%s          %s          %s\n%s  %s  %s\n\n%s\n%s\n%s\n[tab]next  [shift+tab]prev  [enter]save  [esc]cancel%s",
+	body := fmt.Sprintf("%s\n%s\n%s\n%s\n\n%s\n%s  %s  %s  %s\n\n%s          %s          %s\n%s  %s  %s\n\n%s\n%s\n%s\n[tab]next  [shift+tab]prev  [←/→]cycle assignee  [enter]save  [esc]cancel%s",
 		titleLabel, f.titleInput.View(),
 		descLabel, f.descInput.View(),
 		assigneeLabel+"  "+priorityLabel+"  "+pointsLabel+"  "+statusLabel,
-		f.assigneeInput.View(), f.priorityInput.View(), f.pointsInput.View(), f.statusInput.View(),
+		f.assigneeView(), f.priorityInput.View(), f.pointsInput.View(), f.statusInput.View(),
 		labelsLabel, blocksLabel, blockedByLabel,
 		f.labelsInput.View(), f.blocksInput.View(), f.blockedByIn.View(),
 		sprintLabel, f.sprintInput.View(),

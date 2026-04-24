@@ -48,7 +48,7 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		app := tui.New(svc)
+		app := tui.New(svc, cfg.DefaultAssignee)
 		return app.Run()
 	},
 }

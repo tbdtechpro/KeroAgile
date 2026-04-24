@@ -129,6 +129,14 @@ func toolList() []toolDef {
 				"blocked_by": str("ID of the blocked task"),
 			}, []string{"task_id", "blocked_by"}),
 		},
+		{
+			Name:        "assign_task_sprint",
+			Description: "Assign a task to a sprint, or remove it from its current sprint.",
+			InputSchema: obj(map[string]any{
+				"task_id":   str("Task ID, e.g. KA-008"),
+				"sprint_id": map[string]any{"type": "number", "description": "Sprint ID to assign, or omit/null to remove"},
+			}, []string{"task_id"}),
+		},
 	}
 }
 
@@ -368,6 +376,30 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 			return "", err
 		}
 		return toJSON(map[string]any{"blocker": taskID, "blocked": blockedBy, "removed": true})
+
+	case "assign_task_sprint":
+		taskID := str("task_id")
+		if taskID == "" {
+			return "", fmt.Errorf("task_id is required")
+		}
+		var sprintID *int64
+		if v, ok := args["sprint_id"]; ok && v != nil {
+			switch n := v.(type) {
+			case float64:
+				id := int64(n)
+				sprintID = &id
+			case int64:
+				sprintID = &n
+			}
+		}
+		task, err := svc.AssignTaskToSprint(taskID, sprintID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return "", fmt.Errorf("task %s not found", taskID)
+			}
+			return "", err
+		}
+		return toJSON(task)
 
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)

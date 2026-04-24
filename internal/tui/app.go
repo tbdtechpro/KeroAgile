@@ -397,11 +397,16 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 		}
 		pid := a.sidebar.SelectedProjectID()
 		sprintID := a.selectedSprintID
+		sprintFilterID := a.selectedSprintID
 		cmds = append(cmds, func() tea.Msg {
 			if _, err := a.svc.AssignTaskToSprint(id, sprintID); err != nil {
 				return statusNotifMsg{fmt.Sprintf("error: %v", err)}
 			}
-			return reloadTasksMsg{projectID: pid}
+			tasks, err := a.svc.ListTasks(pid, domain.TaskFilters{SprintID: sprintFilterID})
+			if err != nil {
+				return statusNotifMsg{fmt.Sprintf("error: %v", err)}
+			}
+			return tasksReloadedMsg{tasks}
 		})
 	case "S":
 		id := a.board.SelectedTaskID()
@@ -409,11 +414,16 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 			break
 		}
 		pid := a.sidebar.SelectedProjectID()
+		sprintFilterID := a.selectedSprintID
 		cmds = append(cmds, func() tea.Msg {
 			if _, err := a.svc.AssignTaskToSprint(id, nil); err != nil {
 				return statusNotifMsg{fmt.Sprintf("error: %v", err)}
 			}
-			return reloadTasksMsg{projectID: pid}
+			tasks, err := a.svc.ListTasks(pid, domain.TaskFilters{SprintID: sprintFilterID})
+			if err != nil {
+				return statusNotifMsg{fmt.Sprintf("error: %v", err)}
+			}
+			return tasksReloadedMsg{tasks}
 		})
 	}
 	return cmds

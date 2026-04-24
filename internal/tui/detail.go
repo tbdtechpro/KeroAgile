@@ -158,15 +158,16 @@ func (d Detail) View() string {
 
 	if len(t.Labels) > 0 {
 		sb.WriteString("\n")
-		for _, l := range t.Labels {
-			sb.WriteString(lipgloss.NewStyle().
+		chips := make([]string, len(t.Labels))
+		for i, l := range t.Labels {
+			chips[i] = lipgloss.NewStyle().
 				Foreground(styles.CAccentLt).
 				Border(lipgloss.NormalBorder()).
 				BorderForeground(styles.CAccent).
 				Padding(0, 1).
-				Render(l) + " ")
+				Render(l)
 		}
-		sb.WriteString("\n")
+		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, chips...) + "\n")
 	}
 
 	panel := styles.PanelBorder(d.focused).

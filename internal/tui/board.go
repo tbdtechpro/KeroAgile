@@ -33,10 +33,24 @@ func NewBoard(tasks []*domain.Task, width, height int) Board {
 
 func (b Board) SetTasks(tasks []*domain.Task) Board {
 	b.tasks = tasks
-	b.flatIndex = nil
-	for i := range tasks {
-		b.flatIndex = append(b.flatIndex, i)
+
+	// Build tasksByStatus so flatIndex matches the visual row order (status groups top to bottom).
+	// Without this, ↑/↓ would jump by task ID sequence across sections instead of moving visually.
+	tasksByStatus := make(map[domain.Status][]*domain.Task)
+	for _, t := range tasks {
+		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
 	}
+	taskPos := make(map[string]int, len(tasks))
+	for i, t := range tasks {
+		taskPos[t.ID] = i
+	}
+	b.flatIndex = nil
+	for _, st := range statusOrder {
+		for _, t := range tasksByStatus[st] {
+			b.flatIndex = append(b.flatIndex, taskPos[t.ID])
+		}
+	}
+
 	if b.cursor >= len(b.flatIndex) {
 		b.cursor = max(0, len(b.flatIndex)-1)
 	}
@@ -106,12 +120,14 @@ func (b Board) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			taskIdx := b.taskAtY(msg.Y)
 			if taskIdx >= 0 {
 				b.cursor = taskIdx
+				id := b.SelectedTaskID()
 				b.drag = &DragState{
-					TaskID:    b.SelectedTaskID(),
+					TaskID:    id,
 					TaskTitle: b.tasks[b.flatIndex[taskIdx]].Title,
 					StartY:    msg.Y,
 					CurrentY:  msg.Y,
 				}
+				return b, func() tea.Msg { return taskSelectedMsg{id} }
 			}
 		}
 	case tea.MouseActionMotion:
@@ -124,15 +140,17 @@ func (b Board) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			target := b.drag.TargetStatus
 			taskID := b.drag.TaskID
 			b.drag = nil
-			return b, func() tea.Msg {
-				return taskMovedMsg{taskID: taskID, status: target}
+			if target != "" {
+				return b, func() tea.Msg {
+					return taskMovedMsg{taskID: taskID, status: target}
+				}
 			}
 		}
 	}
 	return b, nil
 }
 
-// taskAtY converts a panel-relative Y (1-based, inside border) to a flat cursor index.
+// taskAtY maps an absolute terminal Y to a flat cursor index.
 // Returns -1 if Y doesn't land on a task row.
 func (b Board) taskAtY(y int) int {
 	tasksByStatus := make(map[domain.Status][]*domain.Task)
@@ -145,7 +163,11 @@ func (b Board) taskAtY(y int) int {
 		flatPos[b.tasks[idx].ID] = fi
 	}
 
-	row := 1 // start after top border
+	pt := b.panelTop
+	if pt == 0 {
+		pt = 2
+	}
+	row := pt // align with absolute terminal Y (panelTop = rows before first content line)
 	for _, st := range statusOrder {
 		tsks := tasksByStatus[st]
 		row++ // header line
@@ -170,21 +192,25 @@ func (b Board) taskAtY(y int) int {
 	return -1
 }
 
-// computeSectionTops returns a map of status → Y position of that section's header,
-// using the same layout logic as View().
+// computeSectionTops returns a map of status → terminal Y of that section's header row.
+// Used by resolveTargetStatus to snap drag targets to sections.
 func (b Board) computeSectionTops() map[domain.Status]int {
 	tasksByStatus := make(map[domain.Status][]*domain.Task)
 	for _, t := range b.tasks {
 		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
 	}
 
+	pt := b.panelTop
+	if pt == 0 {
+		pt = 2
+	}
 	tops := make(map[domain.Status]int)
-	row := 1 // start after top border
+	row := pt
 	for _, st := range statusOrder {
-		tops[st] = row
 		tsks := tasksByStatus[st]
-		row++ // header
-		row++ // divider
+		row++           // header line
+		tops[st] = row  // record at the header line itself (not one row before)
+		row++           // divider
 		if st == domain.StatusDone && len(tsks) > 3 {
 			row++ // collapsed line
 		} else {

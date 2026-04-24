@@ -400,6 +400,7 @@ func (a App) doCreateTask(msg forms.SavedMsg, projectID string) tea.Cmd {
 			Status:     msg.Status,
 			Labels:     msg.Labels,
 			Points:     msg.Points,
+			SprintID:   msg.SprintID,
 		}
 		if _, err := a.svc.CreateTask(msg.Title, msg.Description, projectID, opts); err != nil {
 			return statusNotifMsg{fmt.Sprintf("error: %v", err)}
@@ -417,6 +418,7 @@ func (a App) doUpdateTask(msg forms.SavedMsg, t *domain.Task) tea.Cmd {
 	updated.Status = msg.Status
 	updated.Labels = msg.Labels
 	updated.Points = msg.Points
+	updated.SprintID = msg.SprintID
 	if msg.AssigneeID != "" {
 		s := msg.AssigneeID
 		updated.AssigneeID = &s

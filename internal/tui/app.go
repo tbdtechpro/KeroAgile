@@ -30,13 +30,16 @@ type App struct {
 	board   Board
 	detail  Detail
 
-	focus panelFocus
-	form  *forms.TaskForm
+	focus      panelFocus
+	form       *forms.TaskForm
+	sprintForm *forms.SprintForm
 
-	projects     []*domain.Project
-	currentTasks []*domain.Task
-	users        []*domain.User
-	sprints      []*domain.Sprint
+	projects        []*domain.Project
+	currentTasks    []*domain.Task
+	users           []*domain.User
+	sprints         []*domain.Sprint
+	sprintSummaries []domain.SprintSummary
+	selectedSprintID *int64
 
 	statusMsg    string
 	statusExpiry time.Time
@@ -107,6 +110,27 @@ func (a App) loadTasks(projectID string) tea.Cmd {
 	}
 }
 
+func (a App) loadSprints(projectID string, enterMode bool) tea.Cmd {
+	return func() tea.Msg {
+		summaries, err := a.svc.ListSprintsWithCounts(projectID)
+		if err != nil {
+			return statusNotifMsg{fmt.Sprintf("error loading sprints: %v", err)}
+		}
+		return sprintsLoadedMsg{projectID: projectID, summaries: summaries, enterMode: enterMode}
+	}
+}
+
+func (a App) loadTasksFiltered(projectID string) tea.Cmd {
+	sprintID := a.selectedSprintID
+	return func() tea.Msg {
+		tasks, err := a.svc.ListTasks(projectID, domain.TaskFilters{SprintID: sprintID})
+		if err != nil {
+			return statusNotifMsg{fmt.Sprintf("error: %v", err)}
+		}
+		return tasksReloadedMsg{tasks}
+	}
+}
+
 func (a App) tickPRPoll() tea.Cmd {
 	return tea.Tick(60*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg{}
@@ -115,6 +139,21 @@ func (a App) tickPRPoll() tea.Cmd {
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	if a.sprintForm != nil {
+		switch msg := msg.(type) {
+		case forms.SprintSavedMsg:
+			return a.handleSprintFormSaved(msg)
+		case forms.SprintCancelledMsg:
+			a.sprintForm = nil
+			return a, nil
+		default:
+			m, cmd := a.sprintForm.Update(msg)
+			sf := m.(forms.SprintForm)
+			a.sprintForm = &sf
+			return a, cmd
+		}
+	}
 
 	if a.form != nil {
 		switch msg := msg.(type) {
@@ -169,6 +208,34 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case projectSelectedMsg:
 		cmds = append(cmds, a.loadTasks(msg.projectID))
 
+	case sprintsLoadedMsg:
+		a.sprintSummaries = msg.summaries
+		a.sprints = make([]*domain.Sprint, len(msg.summaries))
+		for i, sum := range msg.summaries {
+			a.sprints[i] = sum.Sprint
+		}
+		var m tea.Model
+		m, _ = a.sidebar.Update(msg)
+		a.sidebar = m.(Sidebar)
+
+	case sprintSelectedMsg:
+		a.selectedSprintID = msg.sprintID
+		header := ""
+		if msg.sprintID != nil {
+			for _, sum := range a.sprintSummaries {
+				if sum.Sprint.ID == *msg.sprintID {
+					header = sprintHeaderLine(sum.Sprint)
+					break
+				}
+			}
+		}
+		a.board = a.board.SetSprintHeader(header)
+		cmds = append(cmds, a.loadTasksFiltered(msg.projectID))
+
+	case openSprintFormMsg:
+		sf := forms.NewSprintForm(a.width, a.height)
+		a.sprintForm = &sf
+
 	case taskSelectedMsg:
 		found := false
 		for _, t := range a.currentTasks {
@@ -204,7 +271,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.doMarkPRMerged(msg.taskID, pid))
 
 	case reloadTasksMsg:
-		cmds = append(cmds, a.loadTasks(msg.projectID))
+		if a.sidebar.InSprintListMode() {
+			cmds = append(cmds, a.loadTasksFiltered(msg.projectID))
+		} else {
+			// "enter" on project in project list → drill to sprint list
+			cmds = append(cmds, a.loadTasks(msg.projectID), a.loadSprints(msg.projectID, true))
+		}
 
 	case deletedTaskMsg:
 		a.setStatus(fmt.Sprintf("deleted %s", msg.taskID))
@@ -228,7 +300,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Forward to focused sub-model
-	if a.form == nil {
+	if a.form == nil && a.sprintForm == nil {
 		var cmd tea.Cmd
 		switch a.focus {
 		case focusSidebar:
@@ -314,6 +386,35 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 	case "r":
 		pid := a.sidebar.SelectedProjectID()
 		cmds = append(cmds, a.loadTasks(pid), a.pollCurrentTaskGit())
+	case "s":
+		id := a.board.SelectedTaskID()
+		if id == "" {
+			break
+		}
+		if a.selectedSprintID == nil {
+			a.setStatus("select a sprint first")
+			break
+		}
+		pid := a.sidebar.SelectedProjectID()
+		sprintID := a.selectedSprintID
+		cmds = append(cmds, func() tea.Msg {
+			if _, err := a.svc.AssignTaskToSprint(id, sprintID); err != nil {
+				return statusNotifMsg{fmt.Sprintf("error: %v", err)}
+			}
+			return reloadTasksMsg{projectID: pid}
+		})
+	case "S":
+		id := a.board.SelectedTaskID()
+		if id == "" {
+			break
+		}
+		pid := a.sidebar.SelectedProjectID()
+		cmds = append(cmds, func() tea.Msg {
+			if _, err := a.svc.AssignTaskToSprint(id, nil); err != nil {
+				return statusNotifMsg{fmt.Sprintf("error: %v", err)}
+			}
+			return reloadTasksMsg{projectID: pid}
+		})
 	}
 	return cmds
 }
@@ -390,6 +491,34 @@ func (a App) handleFormSaved(msg forms.SavedMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return a, nil
+}
+
+func (a App) handleSprintFormSaved(msg forms.SprintSavedMsg) (tea.Model, tea.Cmd) {
+	a.sprintForm = nil
+	pid := a.sidebar.SelectedProjectID()
+	return a, func() tea.Msg {
+		if _, err := a.svc.CreateSprint(msg.Name, pid, msg.Start, msg.End); err != nil {
+			return statusNotifMsg{fmt.Sprintf("error creating sprint: %v", err)}
+		}
+		summaries, err := a.svc.ListSprintsWithCounts(pid)
+		if err != nil {
+			return statusNotifMsg{fmt.Sprintf("error reloading sprints: %v", err)}
+		}
+		return sprintsLoadedMsg{projectID: pid, summaries: summaries, enterMode: false}
+	}
+}
+
+func sprintHeaderLine(sp *domain.Sprint) string {
+	if sp == nil {
+		return ""
+	}
+	dates := ""
+	if sp.StartDate != nil && sp.EndDate != nil {
+		dates = fmt.Sprintf("  ·  %s – %s",
+			sp.StartDate.Format("Jan 2"),
+			sp.EndDate.Format("Jan 2"))
+	}
+	return fmt.Sprintf("%s%s", sp.Name, dates)
 }
 
 func (a App) doCreateTask(msg forms.SavedMsg, projectID string) tea.Cmd {
@@ -583,6 +712,10 @@ func (a App) View() string {
 		statusText = a.statusMsg
 	}
 	statusBar := styles.StatusBar.Width(a.width).Render(statusText)
+
+	if a.sprintForm != nil {
+		return a.sprintForm.View()
+	}
 
 	if a.form != nil {
 		return a.form.View()

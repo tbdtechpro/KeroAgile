@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
@@ -51,17 +52,37 @@ func toolList() []toolDef {
 		},
 		{
 			Name:        "create_task",
-			Description: "Create a new task. Auto-detects project_id from git remote if not provided.",
+			Description: "Create a new task. Auto-detects project_id from git remote if not provided. Assignee is auto-suggested from title keywords when omitted.",
 			InputSchema: obj(map[string]any{
 				"title":       str("Task title (required)"),
 				"project_id":  str("Project ID (auto-detected if omitted)"),
 				"description": str("Task description"),
 				"priority":    str("low|medium|high|critical (default: medium)"),
 				"status":      str("backlog|todo|in_progress|review|done (default: backlog)"),
-				"assignee_id": str("Assignee user ID"),
+				"assignee_id": str("Assignee user ID (auto-suggested from title if omitted)"),
 				"points":      map[string]any{"type": "integer", "description": "Story points"},
 				"labels":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Labels"},
+				"sprint_id":   map[string]any{"type": "integer", "description": "Sprint ID to assign the task to"},
 			}, []string{"title"}),
+		},
+		{
+			Name:        "create_project",
+			Description: "Create a new KeroAgile project.",
+			InputSchema: obj(map[string]any{
+				"id":        str("Project ID, e.g. KA (uppercase letters, required)"),
+				"name":      str("Human-readable project name (required)"),
+				"repo_path": str("Git remote URL or repo path for auto-detection"),
+			}, []string{"id", "name"}),
+		},
+		{
+			Name:        "create_sprint",
+			Description: "Create a new sprint for a project.",
+			InputSchema: obj(map[string]any{
+				"name":       str("Sprint name, e.g. Sprint 1 (required)"),
+				"project_id": str("Project ID (auto-detected from git remote if omitted)"),
+				"start_date": str("Start date in YYYY-MM-DD format (optional)"),
+				"end_date":   str("End date in YYYY-MM-DD format (optional)"),
+			}, []string{"name"}),
 		},
 		{
 			Name:        "update_task",
@@ -206,9 +227,14 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 			return "", errors.New("project_id required — provide it or run `KeroAgile project add --repo <remote-url>` to enable auto-detection")
 		}
 		opts := domain.TaskCreateOpts{
-			Priority:   domain.Priority(str("priority")),
-			Status:     domain.Status(str("status")),
-			AssigneeID: str("assignee_id"),
+			Priority: domain.Priority(str("priority")),
+			Status:   domain.Status(str("status")),
+		}
+		if aid := str("assignee_id"); aid != "" {
+			opts.AssigneeID = aid
+		} else {
+			users, _ := svc.ListUsers()
+			opts.AssigneeID = domain.SuggestAssignee(title, users, "")
 		}
 		if pts, ok := args["points"].(float64); ok {
 			n := int(pts)
@@ -221,11 +247,59 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 				}
 			}
 		}
+		if sid, ok := args["sprint_id"].(float64); ok {
+			id := int64(sid)
+			opts.SprintID = &id
+		}
 		task, err := svc.CreateTask(title, str("description"), pid, opts)
 		if err != nil {
 			return "", err
 		}
 		return toJSON(task)
+
+	case "create_project":
+		id := str("id")
+		name := str("name")
+		if id == "" || name == "" {
+			return "", errors.New("id and name are required")
+		}
+		if err := svc.CreateProject(id, name, str("repo_path")); err != nil {
+			return "", err
+		}
+		return toJSON(map[string]any{"created": strings.ToUpper(id), "name": name})
+
+	case "create_sprint":
+		name := str("name")
+		if name == "" {
+			return "", errors.New("name is required")
+		}
+		pid := str("project_id")
+		if pid == "" {
+			pid = DetectProjectID(svc)
+		}
+		if pid == "" {
+			return "", errors.New("project_id required — provide it or run `KeroAgile project add --repo <remote-url>` to enable auto-detection")
+		}
+		var start, end *time.Time
+		if s := str("start_date"); s != "" {
+			t, err := time.Parse("2006-01-02", s)
+			if err != nil {
+				return "", fmt.Errorf("invalid start_date: %w", err)
+			}
+			start = &t
+		}
+		if s := str("end_date"); s != "" {
+			t, err := time.Parse("2006-01-02", s)
+			if err != nil {
+				return "", fmt.Errorf("invalid end_date: %w", err)
+			}
+			end = &t
+		}
+		sprint, err := svc.CreateSprint(name, pid, start, end)
+		if err != nil {
+			return "", err
+		}
+		return toJSON(sprint)
 
 	case "update_task":
 		tid := str("task_id")

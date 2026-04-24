@@ -1,43 +1,51 @@
 # KeroAgile
 
-A self-hostable agile board for the terminal. Mirrors the core Jira workflow — projects, sprints, tasks, assignees, blockers — without the browser.
+A self-hostable agile board that lives in your terminal — and talks to Claude.
 
-Runs two ways:
-- **TUI** — three-panel kanban board (sidebar / board / detail) with keyboard and mouse support
-- **CLI** — every operation as a subcommand, with `--json` output for scripting
+![KeroAgile board overview](docs/gifs/board-overview.gif)
 
-Data lives in a single SQLite file at `~/.config/keroagile/keroagile.db`. No server, no network, no account.
+KeroAgile gives you Jira-style project tracking (projects, sprints, tasks, assignees, blockers, PR auto-close) with zero browser, zero account, and zero server. Everything stores in a single SQLite file. The TUI runs keyboard-first with mouse support. The MCP integration means Claude Code can read your board, create tasks, move cards, and link branches in plain English — from inside any repo you're working in.
+
+---
+
+> **Early release** — KeroAgile works well for personal projects and solo/small-team use. The core board, CLI, and MCP server are solid; test coverage is present but not exhaustive. Feedback and issues welcome.
+
+---
+
+## Why KeroAgile?
+
+Most project management tools are designed for teams of dozens, cost money, and live in a browser tab you forget to update. KeroAgile is the opposite: it runs where you already work, stores data locally, and plugs directly into your AI coding workflow.
+
+The MCP integration is the part that makes it genuinely different. When you add KeroAgile to Claude Code as an MCP server, Claude can:
+
+- **Create tasks while it codes** — "I'm implementing OAuth, I'll create a task for the follow-up work" happens automatically
+- **Route tasks to the right assignee** — coding tasks go to Claude, design/research tasks go to you, based on title keywords
+- **Import entire project plans in one shot** — `/keroagile-import` reads a markdown plan file and turns it into a sprint-organised board with one command
+- **Run your standup** — `/keroagile-standup` summarises what's in progress, what's blocked, and what's ready for review
+- **Plan your next sprint** — `/keroagile-plan` reads the backlog and proposes a sprint composition by priority and points
+
+---
+
+## Features
+
+- **Three-panel TUI** — sidebar (projects/sprints), kanban board (5 status columns), task detail with git/PR info
+- **Keyboard + mouse** — navigate with `j`/`k` or arrows; drag-and-drop tasks between columns
+- **Sprints** — create sprint phases, filter the board to a sprint, assign tasks, track per-sprint progress
+- **Blockers** — mark tasks as blocking/blocked-by; blockers are visible in the detail panel
+- **PR auto-close** — link a PR number to a task; when it merges, the task moves to `done` automatically
+- **Claude Code MCP** — 15 MCP tools covering every board operation; auto-detects project from git remote
+- **Smart assignee** — infers the right assignee from title keywords (no need to specify every time)
+- **CLI + JSON** — every operation works as a subcommand; pipe to `jq` when stdout isn't a TTY
+- **Zero dependencies** — pure Go, pure-Go SQLite (no CGo, no system libraries)
+
+---
 
 ## Requirements
 
-- Go 1.25+ (for building from source)
+- Go 1.21+ (to build from source)
 - Optional: `git` for branch auto-link, `gh` for PR polling
 
 ## Install
-
-### From a release binary (recommended)
-
-Download the archive for your platform from [Releases](https://github.com/tbdtechpro/KeroAgile/releases/latest), extract, and place the binary in your PATH:
-
-```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/tbdtechpro/KeroAgile/releases/download/v0.2.0/KeroAgile_0.2.0_darwin_arm64.tar.gz | tar xz
-sudo mv KeroAgile /usr/local/bin/
-
-# macOS (Intel)
-curl -L https://github.com/tbdtechpro/KeroAgile/releases/download/v0.2.0/KeroAgile_0.2.0_darwin_amd64.tar.gz | tar xz
-sudo mv KeroAgile /usr/local/bin/
-
-# Linux (amd64)
-curl -L https://github.com/tbdtechpro/KeroAgile/releases/download/v0.2.0/KeroAgile_0.2.0_linux_amd64.tar.gz | tar xz
-sudo mv KeroAgile /usr/local/bin/
-
-# Linux (arm64)
-curl -L https://github.com/tbdtechpro/KeroAgile/releases/download/v0.2.0/KeroAgile_0.2.0_linux_arm64.tar.gz | tar xz
-sudo mv KeroAgile /usr/local/bin/
-```
-
-Binaries are fully self-contained — no CGo, no system dependencies.
 
 ### From source
 
@@ -47,11 +55,23 @@ cd KeroAgile
 make install          # builds and installs to ~/.local/bin/KeroAgile
 ```
 
-Verify the install:
+### From a release binary
+
+Download from [Releases](https://github.com/tbdtechpro/KeroAgile/releases/latest):
 
 ```bash
-KeroAgile --help
+# macOS (Apple Silicon)
+curl -L https://github.com/tbdtechpro/KeroAgile/releases/download/v0.2.0/KeroAgile_0.2.0_darwin_arm64.tar.gz | tar xz
+sudo mv KeroAgile /usr/local/bin/
+
+# Linux (amd64)
+curl -L https://github.com/tbdtechpro/KeroAgile/releases/download/v0.2.0/KeroAgile_0.2.0_linux_amd64.tar.gz | tar xz
+sudo mv KeroAgile /usr/local/bin/
 ```
+
+Binaries are fully self-contained — no CGo, no system dependencies.
+
+---
 
 ## Quick start
 
@@ -59,35 +79,35 @@ KeroAgile --help
 # First-time setup — creates your user, optionally adds Claude as an agent, writes config
 KeroAgile init
 
-# Create a project linked to your git repo's remote URL
+# Create a project linked to your git repo
 KeroAgile project add MYAPP "My App" --repo https://github.com/you/my-app
 
-# Create tasks — assignee is inferred automatically:
-#   coding-signal titles  → assigned to the first agent user (Claude)
-#   design/research/QA    → assigned to you (default_assignee)
+# Add tasks — assignee is inferred automatically from the title
 KeroAgile task add "Implement OAuth login"   --project MYAPP --priority high --points 3
 KeroAgile task add "Design onboarding flow"  --project MYAPP --priority medium
 
-# Move tasks through the board
-KeroAgile task move MYAPP-001 in_progress
-KeroAgile task move MYAPP-001 review
-
-# Launch the TUI
+# Open the board
 KeroAgile
 ```
 
-The `--repo` flag is the remote URL of your git repo. It is used by the MCP integration to auto-detect which project Claude is working on — set it now to avoid configuring it later.
+---
 
-## TUI keyboard shortcuts
+## TUI
+
+![Creating a new task](docs/gifs/new-task.gif)
+
+The board has three panels: projects/sprints on the left, kanban columns in the middle, task detail on the right. Tab cycles focus between them.
+
+### Keyboard shortcuts
 
 | Key | Action |
 |-----|--------|
-| `tab` / `shift+tab` | Cycle panel focus (sidebar → board → detail) |
-| `↑` / `↓` or `j` / `k` | Navigate within focused panel |
-| `enter` | In sidebar: open sprint list for selected project |
-| `esc` | In sprint list: return to project list |
-| `n` | New task form (or new sprint when sprint list is open) |
-| `e` | Edit selected task (in the assignee field, use `←`/`→` to cycle through known users) |
+| `tab` / `shift+tab` | Cycle panel focus |
+| `↑` / `↓` or `j` / `k` | Navigate |
+| `enter` | Open sprint list for selected project |
+| `esc` | Return to project list from sprint list |
+| `n` | New task (or new sprint in sprint list) |
+| `e` | Edit selected task |
 | `m` / `M` | Move task forward / backward one status |
 | `s` | Assign selected task to the active sprint filter |
 | `S` | Remove selected task from its sprint |
@@ -95,137 +115,108 @@ The `--repo` flag is the remote URL of your git repo. It is used by the MCP inte
 | `r` | Refresh tasks + git |
 | `q` / `ctrl+c` | Quit |
 
-Mouse: click to focus a panel, click-and-drag a task row to move it to a different status column.
+Mouse: click to focus a panel, click-and-drag a task row to drop it into a different status column.
 
 ### Sprint workflow
 
-Press `enter` on a project in the sidebar to open its sprint list. Select a sprint (or "All tasks") and press `enter` — the board filters to that sprint. The board header shows the active sprint name and date range. Press `s` on any task to assign it to the selected sprint; `S` removes it. Press `n` in the sprint list to create a new sprint from the TUI.
+![Sprint filtering](docs/gifs/sprint-filter.gif)
+
+Press `enter` on a project in the sidebar to open its sprint list. Select a sprint and press `enter` — the board filters to that sprint and the header shows the sprint name and date range. Press `s` on any task to pull it into the selected sprint; `S` removes it. Press `n` in the sprint list view to create a new sprint from the TUI.
+
+---
 
 ## Claude Code integration
 
-KeroAgile works as a native Claude Code tool via MCP. Once configured, Claude can create tasks, query the board, move cards, and link branches in plain English — from any repo you are working in.
+KeroAgile runs as a native Claude Code MCP server. Once registered, Claude can manage your board in plain English from any repo it's working in.
 
-### Step 1 — Install the binary
+### Setup
 
-Follow the [Install](#install) section above. Confirm the path:
-
-```bash
-which KeroAgile
-# e.g. /usr/local/bin/KeroAgile  or  /home/you/.local/bin/KeroAgile
-```
-
-### Step 2 — Register the MCP server with Claude Code
-
-Add a `keroagile` entry to your Claude Code settings. There are two places you can put it:
-
-**Global** — works in every repo (recommended):
+**1. Register the MCP server** (global — works in every repo):
 
 ```bash
-claude mcp add --scope user keroagile /usr/local/bin/KeroAgile mcp
+claude mcp add --scope user keroagile $(which KeroAgile) mcp
 ```
 
-Replace `/usr/local/bin/KeroAgile` with the actual path from `which KeroAgile`.
-
-**Per-repo** — only active in one project, checked into source control:
-
-```json
-// <repo-root>/.mcp.json
-{
-  "mcpServers": {
-    "keroagile": {
-      "type": "stdio",
-      "command": "/usr/local/bin/KeroAgile",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Verify it connected:
-
-```bash
-claude mcp list
-# keroagile: /usr/local/bin/KeroAgile mcp - ✓ Connected
-```
-
-### Step 3 — Create a KeroAgile project linked to your repo
-
-Claude auto-detects the active project by reading the repo's git remote and matching it against the project's `--repo` URL. Create the project with `--repo` set to the remote URL:
+**2. Link your project to its git repo:**
 
 ```bash
 KeroAgile project add MYAPP "My App" --repo https://github.com/you/my-app
 ```
 
-To find your repo's remote URL:
+Claude reads the repo's git remote and matches it to this URL — no project ID needed in prompts.
 
-```bash
-git remote get-url origin
-```
-
-### Step 4 — Run first-time setup
+**3. Run first-time setup** (if you haven't already):
 
 ```bash
 KeroAgile init
 ```
 
-This creates your user record, optionally adds Claude as an agent user, and writes `~/.config/keroagile/config.toml` with your ID as `default_assignee`. You can also add additional users later:
+This creates your user, optionally adds Claude as an agent user, and writes `~/.config/keroagile/config.toml`.
 
-```bash
-KeroAgile user add alice "Alice"
-KeroAgile user add claude "Claude" --agent
-```
-
-### Step 5 — Use it
-
-Open Claude Code in the repo directory and start asking in plain English:
+**4. Use it:**
 
 ```
-"Add a high-priority task: implement OAuth login"
-"What's in progress?"
-"Move MYAPP-003 to done"
-"What's blocking the login task?"
+"What's in my backlog?"
+"Add a high-priority task: rate limiting on the API"
+"What's blocking the auth task?"
+"Move MYAPP-003 to review"
 "Show me the current sprint"
 ```
 
-Claude auto-detects the project from the repo's remote URL — no project ID needed.
+### Smart assignee
+
+When `assignee_id` is omitted, `create_task` infers the right person from the title:
+
+| Title keywords | Assigned to |
+|----------------|-------------|
+| `implement`, `build`, `fix`, `refactor`, `migrate`, `develop`, … | First agent user (Claude) |
+| `design`, `plan`, `research`, `qa`, `review`, `document`, … | `default_assignee` from config |
+| No match | `default_assignee` |
+
+Claude never needs to reason about routing — the server handles it.
 
 ### Slash commands
 
-Three slash commands ship with KeroAgile for common workflows. They are available in any repo where the `.claude/commands/` directory is on Claude's load path (either the KeroAgile repo itself, or copied into your project's `.claude/commands/`):
-
-| Command | What it does |
-|---------|-------------|
-| `/keroagile-update` | Finds the task matching your current branch and moves it to `review` or `done` |
-| `/keroagile-standup` | Summarises in-progress and review tasks with assignees and blockers |
-| `/keroagile-plan` | Reads the backlog and suggests a sprint composition by priority and points |
-
-To make these commands available in any project, copy them to `~/.claude/commands/`:
+Copy these to `~/.claude/commands/` to make them available in any project:
 
 ```bash
 cp /path/to/KeroAgile/.claude/commands/keroagile-*.md ~/.claude/commands/
 ```
 
-### Available MCP tools
+| Command | What it does |
+|---------|-------------|
+| `/keroagile-import` | Reads a plan/spec markdown file and creates the project, sprints, and tasks — one command to import a full roadmap |
+| `/keroagile-plan` | Reads the backlog and proposes a sprint by priority and points |
+| `/keroagile-standup` | Summarises in-progress and review tasks with assignees and blockers |
+| `/keroagile-update` | Finds the task matching your current branch and moves it to `review` or `done` |
+
+### MCP tools
 
 | Tool | Description |
 |------|-------------|
 | `list_projects` | List all projects |
-| `list_tasks` | List tasks, optionally filtered by status or assignee |
-| `get_task` | Get full details of one task |
-| `create_task` | Create a new task |
-| `update_task` | Update a task's fields |
+| `create_project` | Create a new project |
+| `list_tasks` | List tasks, filtered by status or assignee |
+| `get_task` | Get full task details including blockers and PR info |
+| `create_task` | Create a task (auto-detects project; auto-suggests assignee; accepts `sprint_id`) |
+| `update_task` | Update task fields |
 | `move_task` | Move a task to a different status |
 | `delete_task` | Delete a task |
 | `link_branch` | Link a git branch to a task |
 | `list_users` | List all users and agents |
-| `get_sprint` | Get the active sprint (or a specific sprint by ID) |
-| `assign_task_sprint` | Assign a task to a sprint, or remove it from its current sprint |
+| `get_sprint` | Get the active sprint or a specific sprint by ID |
+| `create_sprint` | Create a new sprint |
+| `assign_task_sprint` | Assign a task to a sprint or remove it |
 | `add_blocker` | Mark one task as blocking another |
 | `remove_blocker` | Remove a blocker relationship |
+
+---
 
 ## CLI reference
 
 ```
+KeroAgile init
+
 KeroAgile project add <id> <name> [--repo <remote-url>]
 KeroAgile project list
 KeroAgile project set-sprint <project-id> on|off
@@ -248,26 +239,16 @@ KeroAgile sprint list --project <id>
 KeroAgile sprint activate <sprint-id>
 KeroAgile sprint assign <task-id> <sprint-id>
 
-KeroAgile init                             # first-time setup (user, agent, config)
-
-KeroAgile mcp                              # start MCP server (Claude Code integration)
+KeroAgile mcp    # start MCP server
 ```
 
-## Smart assignee
-
-When `--assignee` is omitted from `task add`, KeroAgile infers the right assignee from the task title:
-
-- **Coding-signal titles** (`implement`, `build`, `fix`, `refactor`, `migrate`, …) → assigned to the first agent user (`--agent`)
-- **Human-signal titles** (`design`, `plan`, `research`, `qa`, `review`, `asset`, …) → assigned to `default_assignee` from config
-- **No match** → assigned to `default_assignee`
-
-You can always override with `--assignee <id>`. In the TUI task form, the assignee field shows `‹ Name ›` when focused — use `←`/`→` to cycle through all known users.
-
-Every command accepts `--json` for structured output. When stdout is not a TTY (e.g. piped to `jq`), JSON is emitted automatically.
+Every command accepts `--json`. When stdout is not a TTY (piped), JSON is emitted automatically:
 
 ```bash
-KeroAgile task list --project MYAPP --json | jq '.[].title'
+KeroAgile task list --project MYAPP | jq '.[].title'
 ```
+
+---
 
 ## Status values
 
@@ -279,41 +260,42 @@ KeroAgile task list --project MYAPP --json | jq '.[].title'
 
 ## Configuration
 
-Config file: `~/.config/keroagile/config.toml`
+`~/.config/keroagile/config.toml`:
 
 ```toml
 default_project  = "MYAPP"
 default_assignee = "alice"
 ```
 
-Setting `default_project` lets you omit `--project` on most task commands.
+---
 
 ## PR auto-transition
 
-If a task is in `review` status and has a linked PR number, KeroAgile polls GitHub every 60 seconds in the TUI. When the PR merges, the task automatically moves to `done`.
+Link a PR number to a task; KeroAgile polls GitHub every 60 seconds while the TUI is open. When the PR merges, the task moves to `done` automatically.
 
 ```bash
 KeroAgile task link-pr MYAPP-001 42
 ```
 
+---
+
 ## Troubleshooting
 
-**Auto-detection fails / "project_id required" error** — the project must have a `--repo` URL set that matches the repo's git remote. Check with:
+**Auto-detection fails / "project_id required"** — the project's `--repo` URL must match the repo's git remote. Check with:
 ```bash
 git remote get-url origin
 KeroAgile project list --json | jq '.[] | {id, repo_path}'
 ```
-The `repo_path` must be a substring of the remote URL. Re-create the project with `--repo` if needed.
 
-**MCP server not showing up in Claude Code** — run `claude mcp list` to check registration and connection status. Confirm the command path is correct with `which KeroAgile`. The MCP server writes nothing to stdout at startup; it only responds when Claude sends it a request.
+**MCP not showing up** — run `claude mcp list`. Confirm the binary path with `which KeroAgile`.
 
-**`gh: command not found`** — PR polling is disabled; tasks still work normally. Install the [GitHub CLI](https://cli.github.com) to enable PR auto-transition.
+**`gh: command not found`** — PR polling is disabled. Install the [GitHub CLI](https://cli.github.com) to enable PR auto-transition.
 
-**`database is locked`** — only one KeroAgile process should write at a time. If a TUI session crashed, close any lingering processes and retry.
+**`database is locked`** — only one KeroAgile process should write at a time. Close any stale TUI sessions.
 
-**Terminal too narrow** — the TUI needs at least 80 columns and 24 rows. Resize the window or reduce font size.
+**Terminal too narrow** — the TUI needs at least 80 columns and 24 rows.
 
-**Task IDs are wrong** — task IDs are `<project-id>-<seq>` (e.g. `MYAPP-001`). Project ID is case-sensitive.
+---
 
 ## Architecture
 
@@ -325,8 +307,8 @@ internal/
   git/        git + gh CLI wrappers
   mcp/        MCP server (JSON-RPC 2.0 over stdio)
   tui/        BubbleTea TUI (app, sidebar, board, detail, forms)
-cmd/keroagile/  Cobra CLI entry point
-.claude/commands/  Claude Code slash commands
+cmd/keroagile/        Cobra CLI entry point
+.claude/commands/     Claude Code slash commands
 ```
 
 ## Development
@@ -335,4 +317,5 @@ cmd/keroagile/  Cobra CLI entry point
 make test     # go test ./...
 make build    # go build -o KeroAgile ./cmd/keroagile/
 make install  # installs to ~/.local/bin/KeroAgile
+go vet ./...
 ```

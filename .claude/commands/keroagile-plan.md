@@ -41,12 +41,13 @@ Help plan the next sprint for the current KeroAgile project. $ARGUMENTS
 ```
 
 8. Ask the user: "Should I create this sprint and assign these tasks?" If they confirm:
-   - Sprint creation and task assignment are not available via MCP — provide the exact CLI commands to run:
+   - Call `create_sprint` with the suggested name and `project_id` to create the sprint
+   - For each selected task, call `update_task` with `sprint_id` set to the new sprint's ID
+   - Then ask: "Sprint created. Should I activate it?" If yes, the user must run:
      ```
-     KeroAgile sprint add "<name>" --project <id> [--start YYYY-MM-DD] [--end YYYY-MM-DD]
      KeroAgile sprint activate <sprint-id>
-     KeroAgile sprint assign <task-id> <sprint-id>
      ```
+     (Sprint activation is not yet available via MCP.)
 
 ## Notes
 

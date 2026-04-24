@@ -19,11 +19,12 @@ type Board struct {
 	tasks        []*domain.Task
 	flatIndex    []int // maps linear cursor to tasks slice index
 	cursor       int   // linear cursor across all visible tasks
+	scrollOffset int   // content lines scrolled past the top of the visible area
 	drag         *DragState
 	focused      bool
 	width        int
 	height       int
-	panelTop     int // terminal row where the panel's first content line appears (set by App)
+	panelTop     int    // terminal row where the panel's first content line appears (set by App)
 	sprintHeader string // non-empty when filtering by a specific sprint
 }
 
@@ -54,6 +55,66 @@ func (b Board) SetTasks(tasks []*domain.Task) Board {
 
 	if b.cursor >= len(b.flatIndex) {
 		b.cursor = max(0, len(b.flatIndex)-1)
+	}
+	return b.clampScroll()
+}
+
+// lineOfCursor returns the 0-based content-line index of the cursor task.
+func (b Board) lineOfCursor() int {
+	if len(b.flatIndex) == 0 {
+		return -1
+	}
+	tasksByStatus := make(map[domain.Status][]*domain.Task)
+	for _, t := range b.tasks {
+		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
+	}
+	flatPos := make(map[string]int)
+	for fi, idx := range b.flatIndex {
+		flatPos[b.tasks[idx].ID] = fi
+	}
+	line := 0
+	if b.sprintHeader != "" {
+		line++
+	}
+	for _, st := range statusOrder {
+		tsks := tasksByStatus[st]
+		line++ // section header
+		line++ // divider
+		if st == domain.StatusDone && len(tsks) > 3 {
+			for _, t := range tsks {
+				if fi, ok := flatPos[t.ID]; ok && fi == b.cursor {
+					return line // point to the collapsed row
+				}
+			}
+			line++
+		} else {
+			for _, t := range tsks {
+				if fi, ok := flatPos[t.ID]; ok && fi == b.cursor {
+					return line
+				}
+				line++
+			}
+		}
+		line++ // blank separator
+	}
+	return -1
+}
+
+// clampScroll adjusts scrollOffset so the cursor task is within the visible window.
+func (b Board) clampScroll() Board {
+	visible := b.height - 2
+	if visible <= 0 {
+		return b
+	}
+	cl := b.lineOfCursor()
+	if cl < 0 {
+		b.scrollOffset = 0
+		return b
+	}
+	if cl < b.scrollOffset {
+		b.scrollOffset = cl
+	} else if cl >= b.scrollOffset+visible {
+		b.scrollOffset = cl - visible + 1
 	}
 	return b
 }
@@ -102,12 +163,14 @@ func (b Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if b.cursor > 0 {
 				b.cursor--
+				b = b.clampScroll()
 				id := b.SelectedTaskID()
 				return b, func() tea.Msg { return taskSelectedMsg{id} }
 			}
 		case "down", "j":
 			if b.cursor < len(b.flatIndex)-1 {
 				b.cursor++
+				b = b.clampScroll()
 				id := b.SelectedTaskID()
 				return b, func() tea.Msg { return taskSelectedMsg{id} }
 			}
@@ -123,7 +186,20 @@ func (b Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (b Board) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch msg.Action {
 	case tea.MouseActionPress:
-		if msg.Button == tea.MouseButtonLeft {
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if b.scrollOffset > 0 {
+				b.scrollOffset--
+			}
+			return b, nil
+		case tea.MouseButtonWheelDown:
+			visible := b.height - 2
+			totalLines := b.totalContentLines()
+			if b.scrollOffset < totalLines-visible {
+				b.scrollOffset++
+			}
+			return b, nil
+		case tea.MouseButtonLeft:
 			taskIdx := b.taskAtY(msg.Y)
 			if taskIdx >= 0 {
 				b.cursor = taskIdx
@@ -174,7 +250,8 @@ func (b Board) taskAtY(y int) int {
 	if pt == 0 {
 		pt = 2
 	}
-	row := pt // align with absolute terminal Y (panelTop = rows before first content line)
+	// Subtract scrollOffset so that content line N maps to terminal row pt + (N - scrollOffset).
+	row := pt - b.scrollOffset
 	for _, st := range statusOrder {
 		tsks := tasksByStatus[st]
 		row++ // header line
@@ -199,6 +276,30 @@ func (b Board) taskAtY(y int) int {
 	return -1
 }
 
+// totalContentLines returns the total number of content lines the board would render.
+func (b Board) totalContentLines() int {
+	tasksByStatus := make(map[domain.Status][]*domain.Task)
+	for _, t := range b.tasks {
+		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
+	}
+	n := 0
+	if b.sprintHeader != "" {
+		n++
+	}
+	for _, st := range statusOrder {
+		tsks := tasksByStatus[st]
+		n++ // header
+		n++ // divider
+		if st == domain.StatusDone && len(tsks) > 3 {
+			n++ // collapsed
+		} else {
+			n += len(tsks)
+		}
+		n++ // blank
+	}
+	return n
+}
+
 // computeSectionTops returns a map of status → terminal Y of that section's header row.
 // Used by resolveTargetStatus to snap drag targets to sections.
 func (b Board) computeSectionTops() map[domain.Status]int {
@@ -212,12 +313,12 @@ func (b Board) computeSectionTops() map[domain.Status]int {
 		pt = 2
 	}
 	tops := make(map[domain.Status]int)
-	row := pt
+	row := pt - b.scrollOffset
 	for _, st := range statusOrder {
 		tsks := tasksByStatus[st]
-		row++           // header line
-		tops[st] = row  // record at the header line itself (not one row before)
-		row++           // divider
+		row++          // header line
+		tops[st] = row // record at the header line itself (not one row before)
+		row++          // divider
 		if st == domain.StatusDone && len(tsks) > 3 {
 			row++ // collapsed line
 		} else {
@@ -289,9 +390,18 @@ func (b Board) View() string {
 	if panelTop == 0 {
 		panelTop = 2 // default: 1 header row + 1 border row
 	}
+	// visibleLines is the content area height; border takes 2 rows from the panel allocation.
+	visibleLines := b.height - 2
 	content := ""
 	for i, l := range lines {
-		if b.drag.Active() && i == b.drag.CurrentY-panelTop {
+		if i < b.scrollOffset {
+			continue
+		}
+		if visibleLines > 0 && i >= b.scrollOffset+visibleLines {
+			break
+		}
+		// Drag ghost: terminal Y maps to content line scrollOffset+(Y-panelTop).
+		if b.drag.Active() && i == b.scrollOffset+b.drag.CurrentY-panelTop {
 			content += styles.DragGhost.Render(" ⠿ "+b.drag.TaskTitle) + "\n"
 			continue // replace the original row with the ghost, not prepend
 		}

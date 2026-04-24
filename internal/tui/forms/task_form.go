@@ -131,10 +131,10 @@ func New(projectID string, users []*domain.User, defaultID string, task *domain.
 	f.blockedByIn.Width = 20
 
 	if task != nil {
+		f.assigneeIdx = 0 // reset; edit form never inherits defaultID pre-selection
 		f.titleInput.SetValue(task.Title)
 		f.descInput.SetValue(task.Description)
 		if task.AssigneeID != nil {
-			f.assigneeIdx = 0
 			for i, u := range users {
 				if u.ID == *task.AssigneeID {
 					f.assigneeIdx = i + 1

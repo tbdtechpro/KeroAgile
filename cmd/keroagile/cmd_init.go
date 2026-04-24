@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -22,23 +23,42 @@ var initCmd = &cobra.Command{
 		fmt.Println("Welcome to KeroAgile!")
 		fmt.Println("─────────────────────────────────────────")
 
-		name := prompt(r, "Your display name: ")
+		name, err := promptLine(r, "Your display name: ")
+		if err != nil {
+			return fmt.Errorf("stdin closed before display name was provided")
+		}
 		if strings.TrimSpace(name) == "" {
 			exitValidation("display name is required")
 		}
 
 		var id string
 		for {
-			id = strings.TrimSpace(prompt(r, "Your user ID (e.g. matt): "))
+			raw, err := promptLine(r, "Your user ID (e.g. matt): ")
+			if err != nil {
+				return fmt.Errorf("stdin closed before user ID was provided")
+			}
+			id = strings.TrimSpace(raw)
 			if validID.MatchString(id) {
 				break
 			}
 			fmt.Println("  ID must be lowercase letters, numbers, and hyphens (e.g. matt, john-doe)")
 		}
 
-		project := strings.TrimSpace(prompt(r, "Default project ID (optional, press enter to skip): "))
+		var project string
+		for {
+			raw, err := promptLine(r, "Default project ID (optional, press enter to skip): ")
+			if err != nil {
+				break
+			}
+			project = strings.TrimSpace(raw)
+			if project == "" || validID.MatchString(strings.ToLower(project)) {
+				break
+			}
+			fmt.Println("  Project ID must be letters, numbers, and hyphens (e.g. KA, MY-APP) — or press enter to skip")
+		}
 
-		addClaude := strings.ToLower(strings.TrimSpace(prompt(r, "Add Claude as an agent user for coding tasks? [Y/n]: ")))
+		raw, _ := promptLine(r, "Add Claude as an agent user for coding tasks? [Y/n]: ")
+		addClaude := strings.ToLower(strings.TrimSpace(raw))
 		wantClaude := addClaude == "" || addClaude == "y" || addClaude == "yes"
 
 		fmt.Println()
@@ -75,8 +95,11 @@ var initCmd = &cobra.Command{
 	},
 }
 
-func prompt(r *bufio.Reader, label string) string {
+func promptLine(r *bufio.Reader, label string) (string, error) {
 	fmt.Print(label)
-	line, _ := r.ReadString('\n')
-	return strings.TrimRight(line, "\r\n")
+	line, err := r.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return strings.TrimRight(line, "\r\n"), err
+	}
+	return strings.TrimRight(line, "\r\n"), nil
 }

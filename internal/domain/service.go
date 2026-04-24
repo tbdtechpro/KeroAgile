@@ -220,3 +220,25 @@ func (s *Service) AddDep(blockerID, blockedID string) error {
 func (s *Service) RemoveDep(blockerID, blockedID string) error {
 	return s.store.RemoveDep(blockerID, blockedID)
 }
+
+// AssignTaskToSprint sets or clears the sprint assignment for a task.
+// sprintID == nil clears the assignment.
+func (s *Service) AssignTaskToSprint(taskID string, sprintID *int64) (*Task, error) {
+	t, err := s.store.GetTask(taskID)
+	if err != nil {
+		return nil, err
+	}
+	t.SprintID = sprintID
+	if err := s.store.UpdateTask(t); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func (s *Service) GetActiveSprint(projectID string) (*Sprint, error) {
+	return s.store.GetActiveSprint(projectID)
+}
+
+func (s *Service) ListSprintsWithCounts(projectID string) ([]SprintSummary, error) {
+	return s.store.ListSprintsWithCounts(projectID)
+}

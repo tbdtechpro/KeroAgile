@@ -64,14 +64,22 @@ var initCmd = &cobra.Command{
 		fmt.Println()
 
 		if _, err := svc.CreateUser(id, name, false); err != nil {
-			fmt.Printf("  note: skipping user creation (%v)\n", err)
+			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+				fmt.Printf("  note: user %q already exists\n", id)
+			} else {
+				fmt.Printf("  note: skipping user creation (%v)\n", err)
+			}
 		} else {
 			fmt.Printf("  ✓ Created user %s (%s)\n", id, name)
 		}
 
 		if wantClaude {
 			if _, err := svc.CreateUser("claude", "Claude", true); err != nil {
-				fmt.Printf("  note: skipping agent creation (%v)\n", err)
+				if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+					fmt.Println("  note: agent user 'claude' already exists")
+				} else {
+					fmt.Printf("  note: skipping agent creation (%v)\n", err)
+				}
 			} else {
 				fmt.Println("  ✓ Created agent user claude (Claude)")
 			}

@@ -198,10 +198,7 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return f, nil
 		case "left":
 			if f.focus == fieldAssignee {
-				f.assigneeIdx--
-				if f.assigneeIdx < 0 {
-					f.assigneeIdx = len(f.users)
-				}
+				f.assigneeIdx = (f.assigneeIdx - 1 + len(f.users) + 1) % (len(f.users) + 1)
 				return f, nil
 			}
 		case "right":
@@ -273,6 +270,8 @@ func (f *TaskForm) focusCurrent() {
 		f.titleInput.Focus()
 	case fieldDesc:
 		f.descInput.Focus()
+	case fieldAssignee:
+		// cycling only — no textinput to focus
 	case fieldPriority:
 		f.priorityInput.Focus()
 	case fieldPoints:

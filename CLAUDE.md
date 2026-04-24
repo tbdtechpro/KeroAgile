@@ -60,7 +60,7 @@ BubbleTea Elm architecture — value-type models, immutable updates:
 - Panel focus is `panelFocus int` on `App`; `syncFocus()` propagates to sub-models
 - All custom message types are unexported and defined in `internal/tui/msgs.go`
 - `taskMovedMsg` is defined in `board.go` (where drag-and-drop emits it)
-- Form overlay: `App.form *forms.TaskForm`; non-nil when open; all events route to form first
+- Form overlays: `App.sprintForm *forms.SprintForm` (checked first) and `App.form *forms.TaskForm`; non-nil when open; all events route to active form first
 - PR polling: 60-second `tea.Tick` in `Init()`, rescheduled each `tickMsg`
 - Mouse drag: `DragState` in `drag.go`; `computeSectionTops()` in `board.go` for hit-testing
 - `tea.WithMouseCellMotion()` is required for per-cell motion during drag
@@ -80,11 +80,9 @@ All domain structs have `json:"snake_case"` tags. Field names in JSON output:
 
 Never use `t.Fatal` inside a goroutine. Prefer `require.NoError` over `assert.NoError` when the test cannot continue after failure.
 
-## Known limitations (v0.1.1)
+## Known limitations
 
-All v0.1.0 bugs were fixed in v0.1.1. Current known gaps:
-
-- `doUpdateTask` in `app.go` does not persist Blocks/BlockedBy dep changes from the task form — tracked in roadmap §2.2, fix in v0.2.0
+- `doUpdateTask` in `app.go` does not persist Blocks/BlockedBy dep changes from the task form — tracked in roadmap §2.2
 - `Board.panelTop` is hardcoded to 2 in `relayout()`; if the header ever becomes multi-line the drag ghost Y will be off again
 
 ## Roadmap

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 var sprintCmd = &cobra.Command{Use: "sprint", Short: "Manage sprints"}
@@ -85,10 +87,51 @@ var sprintActivateCmd = &cobra.Command{
 	},
 }
 
+var sprintAssignCmd = &cobra.Command{
+	Use:   "assign <task-id> [<sprint-id>]",
+	Short: "Assign a task to a sprint (or --clear to remove)",
+	Args:  cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		clear, _ := cmd.Flags().GetBool("clear")
+
+		var sprintID *int64
+		if !clear {
+			if len(args) < 2 {
+				exitValidation("provide <sprint-id> or --clear")
+			}
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				exitValidation("sprint-id must be an integer")
+			}
+			sprintID = &id
+		}
+
+		task, err := svc.AssignTaskToSprint(args[0], sprintID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				exitNotFound(fmt.Sprintf("task %s not found", args[0]))
+			}
+			return err
+		}
+
+		if jsonFlag {
+			printJSON(task)
+			return nil
+		}
+		if sprintID == nil {
+			fmt.Printf("removed %s from sprint\n", task.ID)
+		} else {
+			fmt.Printf("assigned %s to sprint %d\n", task.ID, *sprintID)
+		}
+		return nil
+	},
+}
+
 func init() {
 	sprintAddCmd.Flags().String("project", "", "project ID")
 	sprintAddCmd.Flags().String("start", "", "start date YYYY-MM-DD")
 	sprintAddCmd.Flags().String("end", "", "end date YYYY-MM-DD")
 	sprintListCmd.Flags().String("project", "", "project ID")
-	sprintCmd.AddCommand(sprintAddCmd, sprintListCmd, sprintActivateCmd)
+	sprintAssignCmd.Flags().Bool("clear", false, "remove task from its sprint")
+	sprintCmd.AddCommand(sprintAddCmd, sprintListCmd, sprintActivateCmd, sprintAssignCmd)
 }

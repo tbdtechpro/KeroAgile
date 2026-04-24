@@ -25,3 +25,9 @@ type Sprint struct {
 	EndDate   *time.Time   `json:"end_date"`
 	Status    SprintStatus `json:"status"`
 }
+
+// SprintSummary pairs a sprint with its task count for display in the sidebar.
+type SprintSummary struct {
+	Sprint    *Sprint `json:"sprint"`
+	TaskCount int     `json:"task_count"`
+}

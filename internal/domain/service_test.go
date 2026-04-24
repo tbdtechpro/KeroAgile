@@ -115,6 +115,30 @@ func (m *mockStore) UpdateSprint(s *domain.Sprint) error {
 	m.sprints[s.ID] = s
 	return nil
 }
+func (m *mockStore) GetActiveSprint(projectID string) (*domain.Sprint, error) {
+	for _, s := range m.sprints {
+		if s.ProjectID == projectID && s.Status == domain.SprintActive {
+			return s, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+func (m *mockStore) ListSprintsWithCounts(projectID string) ([]domain.SprintSummary, error) {
+	var out []domain.SprintSummary
+	for _, sp := range m.sprints {
+		if sp.ProjectID != projectID {
+			continue
+		}
+		var count int
+		for _, t := range m.tasks {
+			if t.SprintID != nil && *t.SprintID == sp.ID {
+				count++
+			}
+		}
+		out = append(out, domain.SprintSummary{Sprint: sp, TaskCount: count})
+	}
+	return out, nil
+}
 func (m *mockStore) CreateUser(u *domain.User) error {
 	m.users[u.ID] = u
 	return nil
@@ -160,4 +184,30 @@ func TestServiceSecondTaskSeq(t *testing.T) {
 	second, err := svc.CreateTask("Second", "", "KA", domain.TaskCreateOpts{})
 	require.NoError(t, err)
 	assert.Equal(t, "KA-002", second.ID)
+}
+
+func TestAssignTaskToSprint(t *testing.T) {
+	svc := domain.NewService(newMock())
+	require.NoError(t, svc.CreateProject("KA", "myapp", ""))
+	task, err := svc.CreateTask("Do work", "", "KA", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+	require.Nil(t, task.SprintID)
+
+	// Assign to sprint 1
+	sprintID := int64(1)
+	updated, err := svc.AssignTaskToSprint(task.ID, &sprintID)
+	require.NoError(t, err)
+	require.NotNil(t, updated.SprintID)
+	assert.Equal(t, int64(1), *updated.SprintID)
+
+	// Clear assignment
+	cleared, err := svc.AssignTaskToSprint(task.ID, nil)
+	require.NoError(t, err)
+	assert.Nil(t, cleared.SprintID)
+}
+
+func TestAssignTaskToSprint_NotFound(t *testing.T) {
+	svc := domain.NewService(newMock())
+	_, err := svc.AssignTaskToSprint("KA-999", nil)
+	require.ErrorIs(t, err, domain.ErrNotFound)
 }

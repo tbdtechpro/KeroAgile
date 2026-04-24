@@ -49,3 +49,21 @@ type projectsLoadedMsg struct{ projects []*domain.Project }
 
 // usersLoadedMsg carries a fresh user list after initial load.
 type usersLoadedMsg struct{ users []*domain.User }
+
+// sprintSelectedMsg is sent when the user selects a sprint (or "All tasks") in the sidebar.
+// sprintID == nil means "all tasks for this project".
+type sprintSelectedMsg struct {
+	projectID string
+	sprintID  *int64
+}
+
+// sprintsLoadedMsg carries a fresh sprint list for the sidebar sprint view.
+// enterMode == true tells the sidebar to switch into sprint list mode.
+type sprintsLoadedMsg struct {
+	projectID string
+	summaries []domain.SprintSummary
+	enterMode bool
+}
+
+// openSprintFormMsg tells App to open the sprint creation modal.
+type openSprintFormMsg struct{}

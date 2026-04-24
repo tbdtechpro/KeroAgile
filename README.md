@@ -83,14 +83,22 @@ The `--repo` flag is the remote URL of your git repo. It is used by the MCP inte
 |-----|--------|
 | `tab` / `shift+tab` | Cycle panel focus (sidebar → board → detail) |
 | `↑` / `↓` or `j` / `k` | Navigate within focused panel |
-| `n` | New task form |
+| `enter` | In sidebar: open sprint list for selected project |
+| `esc` | In sprint list: return to project list |
+| `n` | New task form (or new sprint when sprint list is open) |
 | `e` | Edit selected task |
 | `m` / `M` | Move task forward / backward one status |
+| `s` | Assign selected task to the active sprint filter |
+| `S` | Remove selected task from its sprint |
 | `d` | Delete selected task |
 | `r` | Refresh tasks + git |
 | `q` / `ctrl+c` | Quit |
 
 Mouse: click to focus a panel, click-and-drag a task row to move it to a different status column.
+
+### Sprint workflow
+
+Press `enter` on a project in the sidebar to open its sprint list. Select a sprint (or "All tasks") and press `enter` — the board filters to that sprint. The board header shows the active sprint name and date range. Press `s` on any task to assign it to the selected sprint; `S` removes it. Press `n` in the sprint list to create a new sprint from the TUI.
 
 ## Claude Code integration
 
@@ -210,6 +218,7 @@ cp /path/to/KeroAgile/.claude/commands/keroagile-*.md ~/.claude/commands/
 | `link_branch` | Link a git branch to a task |
 | `list_users` | List all users and agents |
 | `get_sprint` | Get the active sprint (or a specific sprint by ID) |
+| `assign_task_sprint` | Assign a task to a sprint, or remove it from its current sprint |
 | `add_blocker` | Mark one task as blocking another |
 | `remove_blocker` | Remove a blocker relationship |
 

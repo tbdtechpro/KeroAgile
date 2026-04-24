@@ -31,6 +31,8 @@ type Store interface {
 	ListSprints(projectID string) ([]*Sprint, error)
 	GetSprint(id int64) (*Sprint, error)
 	UpdateSprint(s *Sprint) error
+	GetActiveSprint(projectID string) (*Sprint, error)
+	ListSprintsWithCounts(projectID string) ([]SprintSummary, error)
 
 	// Users
 	CreateUser(u *User) error

@@ -88,3 +88,31 @@ func nullTime(t *time.Time) sql.NullString {
 	}
 	return sql.NullString{String: t.Format(time.RFC3339), Valid: true}
 }
+
+func (s *Store) GetActiveSprint(projectID string) (*domain.Sprint, error) {
+	row := s.db.QueryRow(
+		`SELECT id, project_id, name, start_date, end_date, status FROM sprints WHERE project_id=? AND status='active' LIMIT 1`,
+		projectID,
+	)
+	sp, err := scanSprint(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	return sp, err
+}
+
+func (s *Store) ListSprintsWithCounts(projectID string) ([]domain.SprintSummary, error) {
+	sprints, err := s.ListSprints(projectID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.SprintSummary, len(sprints))
+	for i, sp := range sprints {
+		var count int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE sprint_id=?`, sp.ID).Scan(&count); err != nil {
+			return nil, err
+		}
+		out[i] = domain.SprintSummary{Sprint: sp, TaskCount: count}
+	}
+	return out, nil
+}

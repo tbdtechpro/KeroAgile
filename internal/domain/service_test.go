@@ -115,6 +115,17 @@ func (m *mockStore) UpdateSprint(s *domain.Sprint) error {
 	m.sprints[s.ID] = s
 	return nil
 }
+func (m *mockStore) GetActiveSprint(projectID string) (*domain.Sprint, error) {
+	for _, s := range m.sprints {
+		if s.ProjectID == projectID && s.Status == domain.SprintActive {
+			return s, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+func (m *mockStore) ListSprintsWithCounts(projectID string) ([]domain.SprintSummary, error) {
+	return nil, nil
+}
 func (m *mockStore) CreateUser(u *domain.User) error {
 	m.users[u.ID] = u
 	return nil

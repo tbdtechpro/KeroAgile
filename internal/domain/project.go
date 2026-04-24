@@ -28,6 +28,6 @@ type Sprint struct {
 
 // SprintSummary pairs a sprint with its task count for display in the sidebar.
 type SprintSummary struct {
-	Sprint    *Sprint
-	TaskCount int
+	Sprint    *Sprint `json:"sprint"`
+	TaskCount int     `json:"task_count"`
 }

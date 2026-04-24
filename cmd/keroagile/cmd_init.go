@@ -11,7 +11,7 @@ import (
 	"github.com/tbdtechpro/KeroAgile/internal/config"
 )
 
-var validID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
+var validID = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,29}[a-z0-9])?$`)
 
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -44,20 +44,20 @@ var initCmd = &cobra.Command{
 		fmt.Println()
 
 		if _, err := svc.CreateUser(id, name, false); err != nil {
-			fmt.Printf("  note: user %q already exists, skipping creation\n", id)
+			fmt.Printf("  note: skipping user creation (%v)\n", err)
 		} else {
 			fmt.Printf("  ✓ Created user %s (%s)\n", id, name)
 		}
 
 		if wantClaude {
 			if _, err := svc.CreateUser("claude", "Claude", true); err != nil {
-				fmt.Println("  note: agent user 'claude' already exists")
+				fmt.Printf("  note: skipping agent creation (%v)\n", err)
 			} else {
 				fmt.Println("  ✓ Created agent user claude (Claude)")
 			}
 		}
 
-		cfg := &config.Config{
+		cfg = &config.Config{
 			DefaultAssignee: id,
 			DefaultProject:  project,
 		}

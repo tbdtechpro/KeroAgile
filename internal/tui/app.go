@@ -23,8 +23,9 @@ const (
 
 // App is the root BubbleTea model.
 type App struct {
-	svc        *domain.Service
-	gitClients map[string]*git.Client
+	svc             *domain.Service
+	gitClients      map[string]*git.Client
+	defaultAssignee string
 
 	sidebar Sidebar
 	board   Board
@@ -34,11 +35,11 @@ type App struct {
 	form       *forms.TaskForm
 	sprintForm *forms.SprintForm
 
-	projects        []*domain.Project
-	currentTasks    []*domain.Task
-	users           []*domain.User
-	sprints         []*domain.Sprint
-	sprintSummaries []domain.SprintSummary
+	projects         []*domain.Project
+	currentTasks     []*domain.Task
+	users            []*domain.User
+	sprints          []*domain.Sprint
+	sprintSummaries  []domain.SprintSummary
 	selectedSprintID *int64
 
 	statusMsg    string
@@ -52,13 +53,14 @@ type App struct {
 }
 
 // New creates the App. Call Run() to start the BubbleTea event loop.
-func New(svc *domain.Service) *App {
+func New(svc *domain.Service, defaultAssignee string) *App {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	return &App{
-		svc:        svc,
-		gitClients: make(map[string]*git.Client),
-		spinner:    sp,
+		svc:             svc,
+		gitClients:      make(map[string]*git.Client),
+		spinner:         sp,
+		defaultAssignee: defaultAssignee,
 	}
 }
 
@@ -477,13 +479,13 @@ func (a *App) buildCounts() map[string]map[domain.Status]int {
 
 func (a *App) openNewForm() {
 	pid := a.sidebar.SelectedProjectID()
-	f := forms.New(pid, a.users, nil, a.width, a.height, a.sprints)
+	f := forms.New(pid, a.users, a.defaultAssignee, nil, a.width, a.height, a.sprints)
 	a.form = &f
 }
 
 func (a *App) openEditForm(t *domain.Task) {
 	pid := a.sidebar.SelectedProjectID()
-	f := forms.New(pid, a.users, t, a.width, a.height, a.sprints)
+	f := forms.New(pid, a.users, a.defaultAssignee, t, a.width, a.height, a.sprints)
 	a.form = &f
 }
 

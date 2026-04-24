@@ -48,7 +48,7 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		app := tui.New(svc)
+		app := tui.New(svc, cfg.DefaultAssignee)
 		return app.Run()
 	},
 }
@@ -59,7 +59,7 @@ func isTerminal(f *os.File) bool {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false, "output JSON")
-	rootCmd.AddCommand(projectCmd, taskCmd, sprintCmd, userCmd, mcpCmd)
+	rootCmd.AddCommand(projectCmd, taskCmd, sprintCmd, userCmd, mcpCmd, initCmd)
 }
 
 func main() {

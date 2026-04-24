@@ -56,16 +56,17 @@ KeroAgile --help
 ## Quick start
 
 ```bash
+# First-time setup — creates your user, optionally adds Claude as an agent, writes config
+KeroAgile init
+
 # Create a project linked to your git repo's remote URL
 KeroAgile project add MYAPP "My App" --repo https://github.com/you/my-app
 
-# Add team members
-KeroAgile user add alice "Alice"
-KeroAgile user add bot "CI Bot" --agent
-
-# Create tasks
-KeroAgile task add "Build login page" --project MYAPP --assignee alice --priority high --points 3
-KeroAgile task add "Write tests"      --project MYAPP --assignee alice --priority medium
+# Create tasks — assignee is inferred automatically:
+#   coding-signal titles  → assigned to the first agent user (Claude)
+#   design/research/QA    → assigned to you (default_assignee)
+KeroAgile task add "Implement OAuth login"   --project MYAPP --priority high --points 3
+KeroAgile task add "Design onboarding flow"  --project MYAPP --priority medium
 
 # Move tasks through the board
 KeroAgile task move MYAPP-001 in_progress
@@ -86,7 +87,7 @@ The `--repo` flag is the remote URL of your git repo. It is used by the MCP inte
 | `enter` | In sidebar: open sprint list for selected project |
 | `esc` | In sprint list: return to project list |
 | `n` | New task form (or new sprint when sprint list is open) |
-| `e` | Edit selected task |
+| `e` | Edit selected task (in the assignee field, use `←`/`→` to cycle through known users) |
 | `m` / `M` | Move task forward / backward one status |
 | `s` | Assign selected task to the active sprint filter |
 | `S` | Remove selected task from its sprint |
@@ -161,17 +162,17 @@ To find your repo's remote URL:
 git remote get-url origin
 ```
 
-### Step 4 — Add yourself as a user (optional but recommended)
+### Step 4 — Run first-time setup
 
 ```bash
-KeroAgile user add you "Your Name"
+KeroAgile init
 ```
 
-Set yourself as the default assignee in `~/.config/keroagile/config.toml`:
+This creates your user record, optionally adds Claude as an agent user, and writes `~/.config/keroagile/config.toml` with your ID as `default_assignee`. You can also add additional users later:
 
-```toml
-default_project  = "MYAPP"
-default_assignee = "you"
+```bash
+KeroAgile user add alice "Alice"
+KeroAgile user add claude "Claude" --agent
 ```
 
 ### Step 5 — Use it
@@ -247,8 +248,20 @@ KeroAgile sprint list --project <id>
 KeroAgile sprint activate <sprint-id>
 KeroAgile sprint assign <task-id> <sprint-id>
 
+KeroAgile init                             # first-time setup (user, agent, config)
+
 KeroAgile mcp                              # start MCP server (Claude Code integration)
 ```
+
+## Smart assignee
+
+When `--assignee` is omitted from `task add`, KeroAgile infers the right assignee from the task title:
+
+- **Coding-signal titles** (`implement`, `build`, `fix`, `refactor`, `migrate`, …) → assigned to the first agent user (`--agent`)
+- **Human-signal titles** (`design`, `plan`, `research`, `qa`, `review`, `asset`, …) → assigned to `default_assignee` from config
+- **No match** → assigned to `default_assignee`
+
+You can always override with `--assignee <id>`. In the TUI task form, the assignee field shows `‹ Name ›` when focused — use `←`/`→` to cycle through all known users.
 
 Every command accepts `--json` for structured output. When stdout is not a TTY (e.g. piped to `jq`), JSON is emitted automatically.
 

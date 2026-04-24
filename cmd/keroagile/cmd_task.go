@@ -27,7 +27,8 @@ var taskAddCmd = &cobra.Command{
 
 		assignee, _ := cmd.Flags().GetString("assignee")
 		if assignee == "" {
-			assignee = cfg.DefaultAssignee
+			users, _ := svc.ListUsers()
+			assignee = domain.SuggestAssignee(args[0], users, cfg.DefaultAssignee)
 		}
 		priorityStr, _ := cmd.Flags().GetString("priority")
 		statusStr, _ := cmd.Flags().GetString("status")

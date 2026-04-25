@@ -331,7 +331,16 @@ The `KEROAGILE_DATA_DIR` environment variable overrides the default `~/.config/k
 KEROAGILE_DATA_DIR=/mnt/shared KeroAgile task list
 ```
 
-> **TUI in Docker** — the board requires an interactive terminal. For browser-based access, see KA-009 (ttyd wrapper, coming soon).
+**TUI in the browser** — `Dockerfile.ttyd` wraps the board with [ttyd](https://github.com/tsl0922/ttyd), exposing a fully interactive terminal at `http://homelab:7433`. No JavaScript, no frontend:
+
+```bash
+# Start the browser-accessible TUI
+docker compose --profile browser up keroagile-browser
+
+# Then open http://localhost:7433 in any browser
+```
+
+Both services share the same `keroagile-data` volume so they see the same database.
 
 ---
 

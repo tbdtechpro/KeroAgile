@@ -72,6 +72,13 @@ func (d Detail) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Action == tea.MouseActionPress {
 			d.focused = true
 		}
+	case tea.KeyMsg:
+		if d.focused && msg.String() == "right" {
+			if d.task != nil && len(d.task.Blockers) > 0 {
+				target := d.task.Blockers[0]
+				return d, func() tea.Msg { return jumpToTaskMsg{taskID: target} }
+			}
+		}
 	}
 	return d, nil
 }

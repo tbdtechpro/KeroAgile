@@ -288,6 +288,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.setStatus(fmt.Sprintf("✓ %s auto-closed via merged PR", msg.taskID))
 		cmds = append(cmds, a.loadTasks(msg.projectID))
 
+	case addBlockerMsg:
+		pid := a.sidebar.SelectedProjectID()
+		cmds = append(cmds, a.doAddBlocker(msg.blockerID, msg.blockedID, pid))
+
+	case jumpToTaskMsg:
+		a.board = a.board.SetCursorToTask(msg.taskID)
+		a.focus = focusBoard
+		a.syncFocus()
+		for _, t := range a.currentTasks {
+			if t.ID == msg.taskID {
+				a.detail = a.detail.SetTask(t)
+				cmds = append(cmds, a.refreshGit(t))
+				break
+			}
+		}
+
 	case statusNotifMsg:
 		a.setStatus(msg.text)
 
@@ -596,6 +612,15 @@ func (a App) doDeleteTask(id, projectID string) tea.Cmd {
 	}
 }
 
+func (a App) doAddBlocker(blockerID, blockedID, projectID string) tea.Cmd {
+	return func() tea.Msg {
+		if err := a.svc.AddDep(blockerID, blockedID); err != nil {
+			return statusNotifMsg{fmt.Sprintf("error adding blocker: %v", err)}
+		}
+		return reloadTasksMsg{projectID}
+	}
+}
+
 func (a App) doMarkPRMerged(id, projectID string) tea.Cmd {
 	return func() tea.Msg {
 		if err := a.svc.MarkPRMerged(id); err != nil {
@@ -719,7 +744,7 @@ func (a App) View() string {
 		a.detail.View(),
 	)
 
-	statusText := "[n]ew  [e]dit  [m]ove  [d]del  [/]filter  [tab]focus  [r]refresh  [q]quit"
+	statusText := "[n]ew  [e]dit  [m]ove  [d]del  [b]lock  [/]filter  [→]jump-blocker  [tab]focus  [r]refresh  [q]quit"
 	if a.statusMsg != "" && time.Now().Before(a.statusExpiry) {
 		statusText = a.statusMsg
 	}

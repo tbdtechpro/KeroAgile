@@ -67,3 +67,10 @@ type sprintsLoadedMsg struct {
 
 // openSprintFormMsg tells App to open the sprint creation modal.
 type openSprintFormMsg struct{}
+
+// addBlockerMsg is sent when the user submits the "block by" input in the board.
+// blockerID is the task that blocks blockedID.
+type addBlockerMsg struct{ blockerID, blockedID string }
+
+// jumpToTaskMsg asks the App to move the board cursor to the given task.
+type jumpToTaskMsg struct{ taskID string }

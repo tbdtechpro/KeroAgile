@@ -32,13 +32,22 @@ type Board struct {
 
 	filterInput  textinput.Model
 	filterActive bool // true while the filter bar is open
+
+	blockerInput  textinput.Model
+	blockerActive bool // true while the "block by" input bar is open
 }
 
 func NewBoard(tasks []*domain.Task, width, height int) Board {
 	fi := textinput.New()
 	fi.Placeholder = "title  status:in_progress  priority:high  assignee:claude  label:tui"
 	fi.Width = 60
-	b := Board{width: width, height: height, filterInput: fi}
+
+	bi := textinput.New()
+	bi.Placeholder = "task ID that blocks this task  (e.g. KA-001)"
+	bi.Width = 44
+	bi.CharLimit = 20
+
+	b := Board{width: width, height: height, filterInput: fi, blockerInput: bi}
 	return b.SetTasks(tasks)
 }
 
@@ -154,8 +163,11 @@ func (b Board) lineOfCursor() int {
 	if b.sprintHeader != "" {
 		line++
 	}
-	if b.filterActive {
-		line++ // filter bar line
+	if b.filterActive || strings.TrimSpace(b.filterInput.Value()) != "" {
+		line++ // filter bar or locked indicator
+	}
+	if b.blockerActive {
+		line++ // blocker input bar
 	}
 	for _, st := range statusOrder {
 		tsks := tasksByStatus[st]
@@ -229,6 +241,17 @@ func (b Board) SelectedTaskID() string {
 	return b.displayTasks[b.flatIndex[b.cursor]].ID
 }
 
+// SetCursorToTask moves the cursor to the task with the given ID (if visible in displayTasks).
+func (b Board) SetCursorToTask(id string) Board {
+	for fi, idx := range b.flatIndex {
+		if b.displayTasks[idx].ID == id {
+			b.cursor = fi
+			return b.clampScroll()
+		}
+	}
+	return b
+}
+
 func (b Board) CountsByStatus() map[domain.Status]int {
 	out := make(map[domain.Status]int)
 	for _, t := range b.tasks {
@@ -238,6 +261,38 @@ func (b Board) CountsByStatus() map[domain.Status]int {
 }
 
 func (b Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// When the blocker input is open, feed all keys into it.
+	if b.blockerActive {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc":
+				b.blockerActive = false
+				b.blockerInput.SetValue("")
+				b.blockerInput.Blur()
+				return b, nil
+			case "enter":
+				val := strings.TrimSpace(strings.ToUpper(b.blockerInput.Value()))
+				b.blockerActive = false
+				b.blockerInput.SetValue("")
+				b.blockerInput.Blur()
+				if val != "" && len(b.flatIndex) > 0 {
+					blockedID := b.SelectedTaskID()
+					return b, func() tea.Msg { return addBlockerMsg{blockerID: val, blockedID: blockedID} }
+				}
+				return b, nil
+			default:
+				var cmd tea.Cmd
+				b.blockerInput, cmd = b.blockerInput.Update(msg)
+				return b, cmd
+			}
+		default:
+			var cmd tea.Cmd
+			b.blockerInput, cmd = b.blockerInput.Update(msg)
+			return b, cmd
+		}
+	}
+
 	// When the filter bar is open, most keys feed the text input.
 	if b.filterActive {
 		switch msg := msg.(type) {
@@ -275,6 +330,12 @@ func (b Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			b.filterActive = true
 			b.filterInput.Focus()
 			return b, textinput.Blink
+		case "b":
+			if len(b.flatIndex) > 0 {
+				b.blockerActive = true
+				b.blockerInput.Focus()
+				return b, textinput.Blink
+			}
 		case "up", "k":
 			if b.cursor > 0 {
 				b.cursor--
@@ -368,7 +429,10 @@ func (b Board) taskAtY(y int) int {
 	if b.sprintHeader != "" {
 		row++
 	}
-	if b.filterActive {
+	if b.filterActive || strings.TrimSpace(b.filterInput.Value()) != "" {
+		row++
+	}
+	if b.blockerActive {
 		row++
 	}
 	for _, st := range statusOrder {
@@ -405,7 +469,10 @@ func (b Board) totalContentLines() int {
 	if b.sprintHeader != "" {
 		n++
 	}
-	if b.filterActive {
+	if b.filterActive || strings.TrimSpace(b.filterInput.Value()) != "" {
+		n++
+	}
+	if b.blockerActive {
 		n++
 	}
 	for _, st := range statusOrder {
@@ -439,7 +506,10 @@ func (b Board) computeSectionTops() map[domain.Status]int {
 	if b.sprintHeader != "" {
 		row++
 	}
-	if b.filterActive {
+	if b.filterActive || strings.TrimSpace(b.filterInput.Value()) != "" {
+		row++
+	}
+	if b.blockerActive {
 		row++
 	}
 	for _, st := range statusOrder {
@@ -477,6 +547,12 @@ func (b Board) View() string {
 		lines = append(lines, indicator)
 	}
 
+	if b.blockerActive {
+		bar := styles.Danger.Render("⚠ block-by") + "  " + b.blockerInput.View() +
+			"  " + styles.Muted.Render("esc·cancel  enter·add")
+		lines = append(lines, bar)
+	}
+
 	tasksByStatus := make(map[domain.Status][]*domain.Task)
 	for _, t := range b.displayTasks {
 		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
@@ -502,23 +578,37 @@ func (b Board) View() string {
 		} else {
 			for _, t := range tsks {
 				isCursor := flatPos[t.ID] == b.cursor && b.focused
+				isBlocked := len(t.Blockers) > 0
 
 				idStr := styles.Muted.Render(t.ID)
-				titleStr := t.Title
-				if r := []rune(titleStr); b.width > 23 && len(r) > b.width-20 {
-					titleStr = string(r[:b.width-23]) + "..."
+				baseTitle := t.Title
+				truncLimit := b.width - 20
+				if isBlocked {
+					truncLimit -= 2
 				}
-
+				if r := []rune(baseTitle); b.width > 23 && len(r) > truncLimit-3 {
+					baseTitle = string(r[:truncLimit-3]) + "..."
+				}
 				if b.drag.Active() && b.drag.TaskID == t.ID {
-					titleStr = "░ " + titleStr
+					baseTitle = "░ " + baseTitle
 				}
 
-				row := fmt.Sprintf("  %-28s  %s", titleStr, idStr)
+				row := fmt.Sprintf("  %-28s  %s", baseTitle, idStr)
+				var rowLine string
 				if isCursor {
-					lines = append(lines, styles.SelectedRow.Render("▶"+row))
+					if isBlocked {
+						rowLine = styles.Danger.Render("⚠") + styles.SelectedRow.Render("▶"+row)
+					} else {
+						rowLine = styles.SelectedRow.Render("▶" + row)
+					}
 				} else {
-					lines = append(lines, styles.NormalRow.Render(" "+row))
+					if isBlocked {
+						rowLine = styles.Danger.Render("⚠") + styles.NormalRow.Render(" "+row)
+					} else {
+						rowLine = styles.NormalRow.Render(" " + row)
+					}
 				}
+				lines = append(lines, rowLine)
 			}
 		}
 		lines = append(lines, "")

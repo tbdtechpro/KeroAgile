@@ -1,19 +1,17 @@
-FROM golang:1.23-alpine AS builder
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /KeroAgile ./cmd/keroagile/
+# Builds the browser-accessible TUI by wrapping the main image's binary with ttyd.
+# Requires keroagile:latest to be built first:
+#   docker build -t keroagile .
+#   docker build -f Dockerfile.ttyd -t keroagile-ttyd .
+FROM keroagile:latest AS main-binary
 
 FROM alpine:3.20
-# ttyd: terminal emulator over WebSocket
 RUN apk add --no-cache ca-certificates tzdata curl && \
     ARCH=$(uname -m) && \
     if [ "$ARCH" = "x86_64" ]; then SUFFIX="x86_64"; else SUFFIX="aarch64"; fi && \
     curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.${SUFFIX}" \
          -o /usr/local/bin/ttyd && \
     chmod +x /usr/local/bin/ttyd
-COPY --from=builder /KeroAgile /usr/local/bin/KeroAgile
+COPY --from=main-binary /usr/local/bin/KeroAgile /usr/local/bin/KeroAgile
 ENV KEROAGILE_DATA_DIR=/data
 VOLUME ["/data"]
 EXPOSE 7433

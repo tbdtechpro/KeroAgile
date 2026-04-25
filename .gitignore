@@ -4,3 +4,6 @@ KeroAgile
 *.db
 docs/superpowers/
 dist/
+web/node_modules/
+web/dist/
+internal/web/dist/

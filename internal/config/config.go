@@ -18,6 +18,9 @@ func DefaultPath() string {
 }
 
 func DBPath() string {
+	if dir := os.Getenv("KEROAGILE_DATA_DIR"); dir != "" {
+		return filepath.Join(dir, "keroagile.db")
+	}
 	dir, _ := os.UserConfigDir()
 	return filepath.Join(dir, "keroagile", "keroagile.db")
 }

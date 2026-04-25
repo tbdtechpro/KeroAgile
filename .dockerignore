@@ -1,0 +1,6 @@
+dist/
+docs/gifs/
+KeroAgile
+*.db
+.worktrees/
+docs/superpowers/

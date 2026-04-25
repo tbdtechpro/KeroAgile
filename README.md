@@ -312,6 +312,27 @@ alias ka-tasks='ssh myserver.local KeroAgile task list --project MYAPP'
 
 The SQLite database lives at `~/.config/keroagile/keroagile.db` on whichever machine runs the binary. Keep it on one machine and access it over SSH; or copy the file to migrate between machines.
 
+### Docker
+
+A `Dockerfile` and `docker-compose.yml` are included. The database is stored on a named volume so it persists across container restarts.
+
+```bash
+# Build and run the MCP server
+docker compose up -d
+
+# CLI commands against the containerised DB
+docker compose run --rm keroagile task list --project MYAPP
+docker compose run --rm keroagile task add "Fix login bug" --project MYAPP
+```
+
+The `KEROAGILE_DATA_DIR` environment variable overrides the default `~/.config/keroagile/` path. Set it to any directory to control where the database lives — useful for bind-mounts or CI environments:
+
+```bash
+KEROAGILE_DATA_DIR=/mnt/shared KeroAgile task list
+```
+
+> **TUI in Docker** — the board requires an interactive terminal. For browser-based access, see KA-009 (ttyd wrapper, coming soon).
+
 ---
 
 ## PR auto-transition

@@ -1,0 +1,17 @@
+services:
+  keroagile:
+    build: .
+    image: keroagile:latest
+    # Default command is 'mcp' (stdio — not useful in compose).
+    # Override for CLI usage: docker compose run keroagile task list
+    command: ["mcp"]
+    environment:
+      KEROAGILE_DATA_DIR: /data
+    volumes:
+      - keroagile-data:/data
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+volumes:
+  keroagile-data:

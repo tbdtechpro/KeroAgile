@@ -57,8 +57,16 @@ export default function TaskDetail({
 
   return (
     <div
-      className="flex flex-col border-l shrink-0 overflow-y-auto"
-      style={{ width: 320, borderColor: '#1e293b', background: 'var(--ka-bg)' }}
+      className={[
+        'flex flex-col border-l overflow-y-auto',
+        // Mobile: full-screen overlay; desktop: 320px right panel
+        'fixed md:static md:shrink-0',
+        'inset-0 md:inset-auto',
+        'top-12 md:top-auto',
+        'z-30 md:z-auto',
+        'w-full md:w-80',
+      ].join(' ')}
+      style={{ borderColor: '#1e293b', background: 'var(--ka-bg)' }}
     >
       {/* Header */}
       <div

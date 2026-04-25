@@ -29,60 +29,88 @@ export default function SprintSidebar({
   myTasksOnly,
   onSelectSprint,
   onToggleMyTasks,
+  mobileOpen,
+  onMobileClose,
 }: {
   sprintSummaries: SprintSummary[]
   selectedSprintId: number | null | undefined
   myTasksOnly: boolean
   onSelectSprint: (id: number | null | undefined) => void
   onToggleMyTasks: () => void
+  mobileOpen: boolean
+  onMobileClose: () => void
 }) {
+  function select(id: number | null | undefined) {
+    onSelectSprint(id)
+    onMobileClose()
+  }
+
   return (
-    <div
-      className="flex flex-col border-r shrink-0 overflow-y-auto py-3"
-      style={{ width: 192, borderColor: '#1e293b', background: 'var(--ka-bg)' }}
-    >
-      <div className="px-3">
-        <p className="text-xs font-bold mb-2" style={{ color: 'var(--ka-muted)' }}>FILTERS</p>
+    <>
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          style={{ top: 48 }}
+          onClick={onMobileClose}
+        />
+      )}
 
-        <button
-          onClick={onToggleMyTasks}
-          className="w-full text-left text-xs px-2 py-1.5 rounded mb-4 transition-colors"
-          style={{
-            background: myTasksOnly ? 'var(--ka-accent)' : 'transparent',
-            color: myTasksOnly ? 'white' : 'var(--ka-muted)',
-          }}
-        >
-          {myTasksOnly ? '● My tasks' : '○ My tasks'}
-        </button>
+      <div
+        className={[
+          'flex flex-col border-r overflow-y-auto py-3 transition-transform duration-200',
+          // Mobile: fixed slide-in drawer; desktop: static in flex flow
+          'fixed md:static',
+          'top-12 md:top-auto left-0 md:left-auto',
+          'h-[calc(100vh-48px)] md:h-auto',
+          'z-50 md:z-auto',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+        ].join(' ')}
+        style={{ width: 192, borderColor: '#1e293b', background: 'var(--ka-bg)', borderRightWidth: 1 }}
+      >
+        <div className="px-3">
+          <p className="text-xs font-bold mb-2" style={{ color: 'var(--ka-muted)' }}>FILTERS</p>
 
-        <p className="text-xs font-bold mb-2" style={{ color: 'var(--ka-muted)' }}>SPRINT</p>
+          <button
+            onClick={() => { onToggleMyTasks(); onMobileClose() }}
+            className="w-full text-left text-xs px-2 py-1.5 rounded mb-4 transition-colors"
+            style={{
+              background: myTasksOnly ? 'var(--ka-accent)' : 'transparent',
+              color: myTasksOnly ? 'white' : 'var(--ka-muted)',
+            }}
+          >
+            {myTasksOnly ? '● My tasks' : '○ My tasks'}
+          </button>
 
-        <div className="flex flex-col gap-0.5">
-          <SidebarButton active={selectedSprintId === undefined} onClick={() => onSelectSprint(undefined)}>
-            All tasks
-          </SidebarButton>
+          <p className="text-xs font-bold mb-2" style={{ color: 'var(--ka-muted)' }}>SPRINT</p>
 
-          <SidebarButton active={selectedSprintId === null} onClick={() => onSelectSprint(null)}>
-            No sprint
-          </SidebarButton>
-
-          {sprintSummaries.map(ss => (
-            <SidebarButton
-              key={ss.sprint.id}
-              active={selectedSprintId === ss.sprint.id}
-              onClick={() => onSelectSprint(ss.sprint.id)}
-            >
-              <span style={{ color: ss.sprint.status === 'active' ? 'var(--ka-green)' : undefined }}>
-                {ss.sprint.status === 'active' ? '▶ ' : '  '}
-              </span>
-              {ss.sprint.name}
-              {ss.task_count > 0 && (
-                <span className="ml-1 opacity-50">{ss.task_count}</span>
-              )}
+          <div className="flex flex-col gap-0.5">
+            <SidebarButton active={selectedSprintId === undefined} onClick={() => select(undefined)}>
+              All tasks
             </SidebarButton>
-          ))}
+
+            <SidebarButton active={selectedSprintId === null} onClick={() => select(null)}>
+              No sprint
+            </SidebarButton>
+
+            {sprintSummaries.map(ss => (
+              <SidebarButton
+                key={ss.sprint.id}
+                active={selectedSprintId === ss.sprint.id}
+                onClick={() => select(ss.sprint.id)}
+              >
+                <span style={{ color: ss.sprint.status === 'active' ? 'var(--ka-green)' : undefined }}>
+                  {ss.sprint.status === 'active' ? '▶ ' : '  '}
+                </span>
+                {ss.sprint.name}
+                {ss.task_count > 0 && (
+                  <span className="ml-1 opacity-50">{ss.task_count}</span>
+                )}
+              </SidebarButton>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }

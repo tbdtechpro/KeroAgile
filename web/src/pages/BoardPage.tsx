@@ -21,6 +21,7 @@ export default function BoardPage() {
   const [modal, setModal] = useState<ModalState>({ open: false })
   const [sprintFilter, setSprintFilter] = useState<number | null | undefined>(undefined)
   const [myTasksOnly, setMyTasksOnly] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const { toasts, push: pushToast, dismiss } = useToast()
   const moveTask = useMoveTask()
@@ -62,6 +63,7 @@ export default function BoardPage() {
     setSelectedProjectId(id)
     setSelectedTaskId(null)
     setSprintFilter(undefined)
+    setSidebarOpen(false)
   }
 
   if (projectsLoading) {
@@ -89,6 +91,16 @@ export default function BoardPage() {
         className="flex items-center gap-1 px-4 pt-2 border-b shrink-0"
         style={{ borderColor: '#1e293b' }}
       >
+        {/* Mobile: hamburger to open sidebar drawer */}
+        <button
+          onClick={() => setSidebarOpen(v => !v)}
+          className="md:hidden mr-2 text-base opacity-60 hover:opacity-100 transition-opacity"
+          style={{ color: 'var(--ka-text)' }}
+          aria-label="Toggle filters"
+        >
+          ☰
+        </button>
+
         {projects.map(p => (
           <button
             key={p.id}
@@ -122,6 +134,8 @@ export default function BoardPage() {
           myTasksOnly={myTasksOnly}
           onSelectSprint={setSprintFilter}
           onToggleMyTasks={() => setMyTasksOnly(v => !v)}
+          mobileOpen={sidebarOpen}
+          onMobileClose={() => setSidebarOpen(false)}
         />
 
         <div className="flex-1 overflow-x-auto p-4">

@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
@@ -16,34 +18,55 @@ var statusOrder = []domain.Status{
 
 // Board is the middle panel showing all tasks grouped by status.
 type Board struct {
-	tasks        []*domain.Task
-	flatIndex    []int // maps linear cursor to tasks slice index
-	cursor       int   // linear cursor across all visible tasks
-	scrollOffset int   // content lines scrolled past the top of the visible area
+	tasks        []*domain.Task // all tasks from last reload
+	displayTasks []*domain.Task // filtered subset shown on screen (= tasks when no filter)
+	flatIndex    []int          // maps linear cursor to displayTasks slice index
+	cursor       int            // linear cursor across all visible tasks
+	scrollOffset int            // content lines scrolled past the top of the visible area
 	drag         *DragState
 	focused      bool
 	width        int
 	height       int
 	panelTop     int    // terminal row where the panel's first content line appears (set by App)
 	sprintHeader string // non-empty when filtering by a specific sprint
+
+	filterInput  textinput.Model
+	filterActive bool // true while the filter bar is open
 }
 
 func NewBoard(tasks []*domain.Task, width, height int) Board {
-	b := Board{width: width, height: height}
+	fi := textinput.New()
+	fi.Placeholder = "title  status:in_progress  priority:high  assignee:claude  label:tui"
+	fi.Width = 60
+	b := Board{width: width, height: height, filterInput: fi}
 	return b.SetTasks(tasks)
 }
 
 func (b Board) SetTasks(tasks []*domain.Task) Board {
 	b.tasks = tasks
+	return b.rebuildDisplay()
+}
 
-	// Build tasksByStatus so flatIndex matches the visual row order (status groups top to bottom).
-	// Without this, ↑/↓ would jump by task ID sequence across sections instead of moving visually.
+// rebuildDisplay filters b.tasks using the current query and rebuilds flatIndex.
+func (b Board) rebuildDisplay() Board {
+	query := strings.TrimSpace(b.filterInput.Value())
+	if !b.filterActive || query == "" {
+		b.displayTasks = b.tasks
+	} else {
+		b.displayTasks = nil
+		for _, t := range b.tasks {
+			if matchesFilter(t, query) {
+				b.displayTasks = append(b.displayTasks, t)
+			}
+		}
+	}
+
 	tasksByStatus := make(map[domain.Status][]*domain.Task)
-	for _, t := range tasks {
+	for _, t := range b.displayTasks {
 		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
 	}
-	taskPos := make(map[string]int, len(tasks))
-	for i, t := range tasks {
+	taskPos := make(map[string]int, len(b.displayTasks))
+	for i, t := range b.displayTasks {
 		taskPos[t.ID] = i
 	}
 	b.flatIndex = nil
@@ -52,11 +75,66 @@ func (b Board) SetTasks(tasks []*domain.Task) Board {
 			b.flatIndex = append(b.flatIndex, taskPos[t.ID])
 		}
 	}
-
 	if b.cursor >= len(b.flatIndex) {
 		b.cursor = max(0, len(b.flatIndex)-1)
 	}
 	return b.clampScroll()
+}
+
+// matchesFilter returns true if the task satisfies all space-separated terms in query.
+// Each term is either a plain title substring or a "field:value" prefix filter.
+func matchesFilter(t *domain.Task, query string) bool {
+	for _, part := range strings.Fields(strings.ToLower(query)) {
+		if !matchesPart(t, part) {
+			return false
+		}
+	}
+	return true
+}
+
+func matchesPart(t *domain.Task, part string) bool {
+	if val, ok := strings.CutPrefix(part, "status:"); ok {
+		return strings.HasPrefix(string(t.Status), val)
+	}
+	if val, ok := strings.CutPrefix(part, "s:"); ok {
+		return strings.HasPrefix(string(t.Status), val)
+	}
+	if val, ok := strings.CutPrefix(part, "priority:"); ok {
+		return strings.HasPrefix(string(t.Priority), val)
+	}
+	if val, ok := strings.CutPrefix(part, "p:"); ok {
+		return strings.HasPrefix(string(t.Priority), val)
+	}
+	if val, ok := strings.CutPrefix(part, "assignee:"); ok {
+		if t.AssigneeID == nil {
+			return val == "none"
+		}
+		return strings.HasPrefix(*t.AssigneeID, val)
+	}
+	if val, ok := strings.CutPrefix(part, "a:"); ok {
+		if t.AssigneeID == nil {
+			return val == "none"
+		}
+		return strings.HasPrefix(*t.AssigneeID, val)
+	}
+	if val, ok := strings.CutPrefix(part, "label:"); ok {
+		for _, lbl := range t.Labels {
+			if strings.Contains(strings.ToLower(lbl), val) {
+				return true
+			}
+		}
+		return false
+	}
+	if val, ok := strings.CutPrefix(part, "l:"); ok {
+		for _, lbl := range t.Labels {
+			if strings.Contains(strings.ToLower(lbl), val) {
+				return true
+			}
+		}
+		return false
+	}
+	// Default: title substring match.
+	return strings.Contains(strings.ToLower(t.Title), part)
 }
 
 // lineOfCursor returns the 0-based content-line index of the cursor task.
@@ -65,16 +143,19 @@ func (b Board) lineOfCursor() int {
 		return -1
 	}
 	tasksByStatus := make(map[domain.Status][]*domain.Task)
-	for _, t := range b.tasks {
+	for _, t := range b.displayTasks {
 		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
 	}
 	flatPos := make(map[string]int)
 	for fi, idx := range b.flatIndex {
-		flatPos[b.tasks[idx].ID] = fi
+		flatPos[b.displayTasks[idx].ID] = fi
 	}
 	line := 0
 	if b.sprintHeader != "" {
 		line++
+	}
+	if b.filterActive {
+		line++ // filter bar line
 	}
 	for _, st := range statusOrder {
 		tsks := tasksByStatus[st]
@@ -145,7 +226,7 @@ func (b Board) SelectedTaskID() string {
 	if len(b.flatIndex) == 0 {
 		return ""
 	}
-	return b.tasks[b.flatIndex[b.cursor]].ID
+	return b.displayTasks[b.flatIndex[b.cursor]].ID
 }
 
 func (b Board) CountsByStatus() map[domain.Status]int {
@@ -157,9 +238,43 @@ func (b Board) CountsByStatus() map[domain.Status]int {
 }
 
 func (b Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// When the filter bar is open, most keys feed the text input.
+	if b.filterActive {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc":
+				b.filterInput.SetValue("")
+				b.filterActive = false
+				b.filterInput.Blur()
+				b = b.rebuildDisplay()
+				return b, nil
+			case "enter":
+				// Accept the current filter and close the bar (filter stays applied).
+				b.filterActive = false
+				b.filterInput.Blur()
+				return b, nil
+			default:
+				var cmd tea.Cmd
+				b.filterInput, cmd = b.filterInput.Update(msg)
+				b = b.rebuildDisplay()
+				b = b.clampScroll()
+				return b, cmd
+			}
+		default:
+			var cmd tea.Cmd
+			b.filterInput, cmd = b.filterInput.Update(msg)
+			return b, cmd
+		}
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "/":
+			b.filterActive = true
+			b.filterInput.Focus()
+			return b, textinput.Blink
 		case "up", "k":
 			if b.cursor > 0 {
 				b.cursor--
@@ -206,7 +321,7 @@ func (b Board) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				id := b.SelectedTaskID()
 				b.drag = &DragState{
 					TaskID:    id,
-					TaskTitle: b.tasks[b.flatIndex[taskIdx]].Title,
+					TaskTitle: b.displayTasks[b.flatIndex[taskIdx]].Title,
 					StartY:    msg.Y,
 					CurrentY:  msg.Y,
 				}
@@ -237,21 +352,25 @@ func (b Board) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // Returns -1 if Y doesn't land on a task row.
 func (b Board) taskAtY(y int) int {
 	tasksByStatus := make(map[domain.Status][]*domain.Task)
-	for _, t := range b.tasks {
+	for _, t := range b.displayTasks {
 		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
 	}
-
-	flatPos := make(map[string]int) // task ID → flat cursor index
+	flatPos := make(map[string]int)
 	for fi, idx := range b.flatIndex {
-		flatPos[b.tasks[idx].ID] = fi
+		flatPos[b.displayTasks[idx].ID] = fi
 	}
 
 	pt := b.panelTop
 	if pt == 0 {
 		pt = 2
 	}
-	// Subtract scrollOffset so that content line N maps to terminal row pt + (N - scrollOffset).
 	row := pt - b.scrollOffset
+	if b.sprintHeader != "" {
+		row++
+	}
+	if b.filterActive {
+		row++
+	}
 	for _, st := range statusOrder {
 		tsks := tasksByStatus[st]
 		row++ // header line
@@ -279,11 +398,14 @@ func (b Board) taskAtY(y int) int {
 // totalContentLines returns the total number of content lines the board would render.
 func (b Board) totalContentLines() int {
 	tasksByStatus := make(map[domain.Status][]*domain.Task)
-	for _, t := range b.tasks {
+	for _, t := range b.displayTasks {
 		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
 	}
 	n := 0
 	if b.sprintHeader != "" {
+		n++
+	}
+	if b.filterActive {
 		n++
 	}
 	for _, st := range statusOrder {
@@ -304,7 +426,7 @@ func (b Board) totalContentLines() int {
 // Used by resolveTargetStatus to snap drag targets to sections.
 func (b Board) computeSectionTops() map[domain.Status]int {
 	tasksByStatus := make(map[domain.Status][]*domain.Task)
-	for _, t := range b.tasks {
+	for _, t := range b.displayTasks {
 		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
 	}
 
@@ -314,6 +436,12 @@ func (b Board) computeSectionTops() map[domain.Status]int {
 	}
 	tops := make(map[domain.Status]int)
 	row := pt - b.scrollOffset
+	if b.sprintHeader != "" {
+		row++
+	}
+	if b.filterActive {
+		row++
+	}
 	for _, st := range statusOrder {
 		tsks := tasksByStatus[st]
 		row++          // header line
@@ -338,14 +466,24 @@ func (b Board) View() string {
 		lines = append(lines, styles.Muted.Render(b.sprintHeader))
 	}
 
-	tasksByStatus := make(map[domain.Status][]*domain.Task)
-	for _, t := range b.tasks {
-		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
+	if b.filterActive {
+		bar := styles.Muted.Render("/") + " " + b.filterInput.View() +
+			"  " + styles.Muted.Render("esc·clear  enter·lock")
+		lines = append(lines, bar)
+	} else if q := strings.TrimSpace(b.filterInput.Value()); q != "" {
+		indicator := styles.Muted.Render("/ ") +
+			lipgloss.NewStyle().Foreground(styles.CAccentLt).Render(q) +
+			styles.Muted.Render("  / to edit  esc to clear")
+		lines = append(lines, indicator)
 	}
 
+	tasksByStatus := make(map[domain.Status][]*domain.Task)
+	for _, t := range b.displayTasks {
+		tasksByStatus[t.Status] = append(tasksByStatus[t.Status], t)
+	}
 	flatPos := make(map[string]int)
 	for fi, idx := range b.flatIndex {
-		flatPos[b.tasks[idx].ID] = fi
+		flatPos[b.displayTasks[idx].ID] = fi
 	}
 
 	for _, st := range statusOrder {
@@ -390,7 +528,6 @@ func (b Board) View() string {
 	if panelTop == 0 {
 		panelTop = 2 // default: 1 header row + 1 border row
 	}
-	// visibleLines is the content area height; border takes 2 rows from the panel allocation.
 	visibleLines := b.height - 2
 	content := ""
 	for i, l := range lines {
@@ -400,10 +537,9 @@ func (b Board) View() string {
 		if visibleLines > 0 && i >= b.scrollOffset+visibleLines {
 			break
 		}
-		// Drag ghost: terminal Y maps to content line scrollOffset+(Y-panelTop).
 		if b.drag.Active() && i == b.scrollOffset+b.drag.CurrentY-panelTop {
 			content += styles.DragGhost.Render(" ⠿ "+b.drag.TaskTitle) + "\n"
-			continue // replace the original row with the ghost, not prepend
+			continue
 		}
 		content += l + "\n"
 	}

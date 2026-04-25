@@ -1,14 +1,14 @@
 # KeroAgile
 
-A self-hostable agile board that lives in your terminal — and talks to Claude.
+A self-hostable agile board for your terminal and browser — powered by Claude.
 
 ![KeroAgile board overview](docs/gifs/board-overview.gif)
 
-KeroAgile gives you Jira-style project tracking (projects, sprints, tasks, assignees, blockers, PR auto-close) with zero browser, zero account, and zero server. Everything stores in a single SQLite file. The TUI runs keyboard-first with mouse support. The MCP integration means Claude Code can read your board, create tasks, move cards, and link branches in plain English — from inside any repo you're working in.
+KeroAgile gives you Jira-style project tracking (projects, sprints, tasks, assignees, blockers, PR auto-close) with zero cloud account and zero vendor lock-in. Everything stores in a single SQLite file. Run the keyboard-first TUI in your terminal, or open the React web UI in any browser on your network. The MCP integration means Claude Code can read your board, create tasks, move cards, and link branches in plain English — from inside any repo you're working in.
 
 ---
 
-> **Early release** — KeroAgile works well for personal projects and solo/small-team use. The core board, CLI, and MCP server are solid; test coverage is present but not exhaustive. Feedback and issues welcome.
+> **Early release** — KeroAgile works well for personal projects and solo/small-team use. The core board, CLI, MCP server, API, and web UI are solid; test coverage is present but not exhaustive. Feedback and issues welcome.
 
 ---
 
@@ -28,13 +28,14 @@ The MCP integration is the part that makes it genuinely different. When you add 
 
 ## Features
 
-- **Three-panel TUI** — sidebar (projects/sprints), kanban board (5 status columns), task detail with git/PR info
-- **Keyboard + mouse** — navigate with `j`/`k` or arrows; drag-and-drop tasks between columns
+- **Terminal TUI** — three-panel layout (sidebar, kanban board, task detail); keyboard + mouse; drag-and-drop between columns
+- **React web UI** — the same board in any browser; drag-and-drop, task modal, detail drawer, sprint sidebar, mobile-responsive
 - **Sprints** — create sprint phases, filter the board to a sprint, assign tasks, track per-sprint progress
-- **Blockers** — mark tasks as blocking/blocked-by; blockers are visible in the detail panel
+- **Blockers** — mark tasks as blocking/blocked-by; blocked tasks shown with ⚠ in both TUI and web UI
 - **PR auto-close** — link a PR number to a task; when it merges, the task moves to `done` automatically
 - **Claude Code MCP** — 15 MCP tools covering every board operation; auto-detects project from git remote
 - **Smart assignee** — infers the right assignee from title keywords (no need to specify every time)
+- **REST API** — JWT-authenticated HTTP API on port 7432; powers the web UI and enables scripting
 - **CLI + JSON** — every operation works as a subcommand; pipe to `jq` when stdout isn't a TTY
 - **Zero dependencies** — pure Go, pure-Go SQLite (no CGo, no system libraries)
 
@@ -43,6 +44,7 @@ The MCP integration is the part that makes it genuinely different. When you add 
 ## Requirements
 
 - Go 1.21+ (to build from source)
+- Node.js 18+ (to build the web UI from source; not needed for release binaries)
 - Optional: `git` for branch auto-link, `gh` for PR polling
 
 ## Install
@@ -52,7 +54,8 @@ The MCP integration is the part that makes it genuinely different. When you add 
 ```bash
 git clone https://github.com/tbdtechpro/KeroAgile
 cd KeroAgile
-make install          # builds and installs to ~/.local/bin/KeroAgile
+make build-full   # builds React UI, embeds it, then builds the Go binary
+make install      # installs to ~/.local/bin/KeroAgile
 ```
 
 ### From a release binary
@@ -69,7 +72,7 @@ curl -L https://github.com/tbdtechpro/KeroAgile/releases/download/v0.2.0/KeroAgi
 sudo mv KeroAgile /usr/local/bin/
 ```
 
-Binaries are fully self-contained — no CGo, no system dependencies.
+Binaries are fully self-contained — the React web UI is embedded in the binary; no Node.js, no CGo, no system dependencies.
 
 ---
 
@@ -86,8 +89,13 @@ KeroAgile project add MYAPP "My App" --repo https://github.com/you/my-app
 KeroAgile task add "Implement OAuth login"   --project MYAPP --priority high --points 3
 KeroAgile task add "Design onboarding flow"  --project MYAPP --priority medium
 
-# Open the board
+# Open the terminal board
 KeroAgile
+
+# — or — open the web UI in a browser
+KeroAgile user set-password alice    # set a login password first
+KeroAgile serve                      # starts API + web UI on :7432
+# then open http://localhost:7432
 ```
 
 ---
@@ -105,12 +113,15 @@ The board has three panels: projects/sprints on the left, kanban columns in the 
 | `tab` / `shift+tab` | Cycle panel focus |
 | `↑` / `↓` or `j` / `k` | Navigate |
 | `enter` | Open sprint list for selected project |
-| `esc` | Return to project list from sprint list |
+| `esc` | Return to project list / close filter |
 | `n` | New task (or new sprint in sprint list) |
 | `e` | Edit selected task |
 | `m` / `M` | Move task forward / backward one status |
 | `s` | Assign selected task to the active sprint filter |
 | `S` | Remove selected task from its sprint |
+| `b` | Open blocker input — type a task ID to mark this task as blocked by it |
+| `→` | In task detail: jump to the first blocker task |
+| `/` | Open filter bar — filter by title, status, priority, assignee, or label |
 | `d` | Delete selected task |
 | `r` | Refresh tasks + git |
 | `q` / `ctrl+c` | Quit |
@@ -122,6 +133,41 @@ Mouse: click to focus a panel, click-and-drag a task row to drop it into a diffe
 ![Sprint filtering](docs/gifs/sprint-filter.gif)
 
 Press `enter` on a project in the sidebar to open its sprint list. Select a sprint and press `enter` — the board filters to that sprint and the header shows the sprint name and date range. Press `s` on any task to pull it into the selected sprint; `S` removes it. Press `n` in the sprint list view to create a new sprint from the TUI.
+
+### Blocker workflow
+
+Press `b` on a selected task to open the blocker input. Type the blocking task's ID and press `enter`. The blocked task shows a red `⚠` prefix in the board. In the detail panel, press `→` to jump directly to the blocker task.
+
+---
+
+## Web UI
+
+`KeroAgile serve` embeds a full React kanban board at `http://localhost:7432`. Open it in any browser on your network — phones, tablets, and desktops all work.
+
+### Starting
+
+```bash
+# Set a password for your user (required for web login)
+KeroAgile user set-password alice
+
+# Add a JWT signing secret to config so tokens survive restarts
+# ~/.config/keroagile/config.toml:
+#   api_secret = "your-random-secret-here"
+
+KeroAgile serve                         # listens on :7432
+KeroAgile serve --addr 0.0.0.0:7432     # bind all interfaces for LAN access
+```
+
+Then open `http://localhost:7432` in any browser and log in with your user ID and password.
+
+### Features
+
+- **Kanban board** — same five columns as the TUI; drag tasks between columns (8px drag threshold prevents accidental moves)
+- **Task modal** — create and edit tasks from the board; title, description, priority, status, assignee, story points, labels, sprint
+- **Task detail drawer** — click any task card to open its full details on the right; blocked tasks shown with ⚠; two-click delete to prevent accidents
+- **Sprint sidebar** — filter by sprint, "no sprint", or all tasks; "My tasks" toggle filters to the logged-in user
+- **Toast notifications** — success/error feedback on all mutations (4-second auto-dismiss, click to dismiss early)
+- **Mobile-responsive** — sidebar collapses to a hamburger drawer on narrow screens; task detail becomes a full-screen overlay; works on any device accessing the board over your home network
 
 ---
 
@@ -223,6 +269,7 @@ KeroAgile project set-sprint <project-id> on|off
 
 KeroAgile user add <id> <name> [--agent]
 KeroAgile user list
+KeroAgile user set-password <user-id>
 
 KeroAgile task add <title> --project <id> [--assignee <id>] [--priority low|medium|high|critical]
                             [--status backlog|todo|in_progress|review|done] [--points N]
@@ -239,7 +286,8 @@ KeroAgile sprint list --project <id>
 KeroAgile sprint activate <sprint-id>
 KeroAgile sprint assign <task-id> <sprint-id>
 
-KeroAgile mcp    # start MCP server
+KeroAgile serve [--addr :7432]    # REST API + embedded React web UI
+KeroAgile mcp                     # MCP server (stdio, for Claude Code)
 ```
 
 Every command accepts `--json`. When stdout is not a TTY (piped), JSON is emitted automatically:
@@ -265,15 +313,16 @@ KeroAgile task list --project MYAPP | jq '.[].title'
 ```toml
 default_project  = "MYAPP"
 default_assignee = "alice"
+api_secret       = "your-random-secret-here"   # JWT signing key; tokens expire on restart if unset
 ```
 
 ---
 
 ## Deployment
 
-KeroAgile is a single static binary with no dependencies. The simplest way to share it across machines is to install it on a server and SSH in.
+KeroAgile is a single static binary with no dependencies. The React web UI is embedded inside it — no separate web server needed.
 
-### SSH + tmux (recommended for shared/homelab use)
+### SSH + tmux (terminal board on a shared server)
 
 Install the binary on any Linux server, then open the board from your laptop with a single command:
 
@@ -300,24 +349,38 @@ RemoteCommand screen -DR keroagile KeroAgile
 
 ### One-shot SSH alias (read-only friendly)
 
-If you just want quick CLI access without keeping a persistent session:
-
 ```bash
 # ~/.bashrc / ~/.zshrc
 alias ka='ssh myserver.local KeroAgile'
 alias ka-tasks='ssh myserver.local KeroAgile task list --project MYAPP'
 ```
 
+### Web UI on your home network
+
+Run the server on any machine on your LAN — phones, tablets, and laptops can all open the board in a browser:
+
+```bash
+KeroAgile serve --addr 0.0.0.0:7432
+# then open http://<server-ip>:7432 on any device
+```
+
 ### Database location
 
-The SQLite database lives at `~/.config/keroagile/keroagile.db` on whichever machine runs the binary. Keep it on one machine and access it over SSH; or copy the file to migrate between machines.
+The SQLite database lives at `~/.config/keroagile/keroagile.db` on whichever machine runs the binary. The `KEROAGILE_DATA_DIR` environment variable overrides this path — useful for Docker volumes or CI:
+
+```bash
+KEROAGILE_DATA_DIR=/mnt/shared KeroAgile task list
+```
 
 ### Docker
 
-A `Dockerfile` and `docker-compose.yml` are included. The database is stored on a named volume so it persists across container restarts.
+A `Dockerfile` and `docker-compose.yml` are included. The React web UI and API run together in a single container; the database is on a named volume.
 
 ```bash
-# Build and run the MCP server
+# Build the image (embeds the React UI)
+docker build -t keroagile .
+
+# Start the web UI + API
 docker compose up -d
 
 # CLI commands against the containerised DB
@@ -325,22 +388,31 @@ docker compose run --rm keroagile task list --project MYAPP
 docker compose run --rm keroagile task add "Fix login bug" --project MYAPP
 ```
 
-The `KEROAGILE_DATA_DIR` environment variable overrides the default `~/.config/keroagile/` path. Set it to any directory to control where the database lives — useful for bind-mounts or CI environments:
+To run the web UI (rather than the default MCP mode), override the command:
 
-```bash
-KEROAGILE_DATA_DIR=/mnt/shared KeroAgile task list
+```yaml
+# docker-compose.yml snippet
+services:
+  keroagile:
+    image: keroagile:latest
+    command: ["serve", "--addr", ":7432"]
+    environment:
+      KEROAGILE_DATA_DIR: /data
+    ports:
+      - "7432:7432"
+    volumes:
+      - keroagile-data:/data
 ```
 
-**TUI in the browser** — `Dockerfile.ttyd` wraps the board with [ttyd](https://github.com/tsl0922/ttyd), exposing a fully interactive terminal at `http://homelab:7433`. No JavaScript, no frontend:
+**TUI in the browser** — `Dockerfile.ttyd` wraps the TUI with [ttyd](https://github.com/tsl0922/ttyd), exposing a fully interactive terminal at `http://homelab:7433`. No JavaScript, no frontend:
 
 ```bash
-# Start the browser-accessible TUI
+# Start the browser-accessible TUI (alongside the main service)
 docker compose --profile browser up keroagile-browser
-
-# Then open http://localhost:7433 in any browser
+# then open http://localhost:7433
 ```
 
-Both services share the same `keroagile-data` volume so they see the same database.
+Both services share the same `keroagile-data` volume.
 
 ---
 
@@ -370,26 +442,13 @@ KeroAgile project list --json | jq '.[] | {id, repo_path}'
 
 **Terminal too narrow** — the TUI needs at least 80 columns and 24 rows.
 
+**Web UI login fails** — ensure you've set a password with `KeroAgile user set-password <user-id>` and that `api_secret` is set in `config.toml` (if unset, tokens expire when the server restarts).
+
 ---
 
-## API server
+## REST API
 
-`KeroAgile serve` starts a REST API on port 7432. This is the foundation for multi-user access, the upcoming React web UI, and remote CLI mode.
-
-### Setup
-
-```bash
-# Set a JWT signing secret (tokens persist across restarts)
-# Add to ~/.config/keroagile/config.toml:
-#   api_secret = "your-random-secret-here"
-
-# Set a password for a user (required for API login)
-KeroAgile user set-password alice
-
-# Start the server
-KeroAgile serve                    # listens on :7432
-KeroAgile serve --addr :8080       # custom port
-```
+The `KeroAgile serve` command exposes a JSON REST API at `/api/` alongside the web UI. Useful for scripting or building integrations.
 
 ### Authentication
 
@@ -422,23 +481,6 @@ curl -s http://localhost:7432/api/tasks?project_id=MYAPP \
 | `POST` | `/api/sprints` | Create sprint |
 | `GET` | `/api/sprints/{id}` | Get sprint |
 
-### Docker with API server
-
-```yaml
-# docker-compose.yml — override the default mcp command
-services:
-  keroagile:
-    image: keroagile:latest
-    command: ["serve", "--addr", ":7432"]
-    environment:
-      KEROAGILE_DATA_DIR: /data
-      # Alternatively set api_secret via mounted config.toml
-    ports:
-      - "7432:7432"
-    volumes:
-      - keroagile-data:/data
-```
-
 ---
 
 ## Architecture
@@ -450,16 +492,23 @@ internal/
   config/     TOML config load/save
   git/        git + gh CLI wrappers
   mcp/        MCP server (JSON-RPC 2.0 over stdio)
+  api/        REST API server (JWT auth, net/http ServeMux)
+  web/        embedded React build (go:embed all:dist)
   tui/        BubbleTea TUI (app, sidebar, board, detail, forms)
 cmd/keroagile/        Cobra CLI entry point
+web/                  React source (Vite + TypeScript + TanStack Query + dnd-kit + Tailwind)
 .claude/commands/     Claude Code slash commands
 ```
 
 ## Development
 
 ```bash
-make test     # go test ./...
-make build    # go build -o KeroAgile ./cmd/keroagile/
-make install  # installs to ~/.local/bin/KeroAgile
+make test        # go test ./...
+make build       # go build -o KeroAgile (uses existing embedded UI if present)
+make build-web   # npm run build + copy dist into internal/web/dist
+make build-full  # build-web then go build (use this after changing web/ sources)
+make install     # installs to ~/.local/bin/KeroAgile
 go vet ./...
 ```
+
+The React source lives in `web/`. `make build-full` compiles it and embeds the output into the Go binary via `//go:embed all:dist` in `internal/web/static.go`. Release binaries include the pre-built UI — Node.js is only needed when modifying the frontend.

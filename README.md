@@ -269,6 +269,51 @@ default_assignee = "alice"
 
 ---
 
+## Deployment
+
+KeroAgile is a single static binary with no dependencies. The simplest way to share it across machines is to install it on a server and SSH in.
+
+### SSH + tmux (recommended for shared/homelab use)
+
+Install the binary on any Linux server, then open the board from your laptop with a single command:
+
+```bash
+# ~/.ssh/config
+Host keroagile
+  HostName myserver.local
+  User alice
+  RequestTTY yes
+  RemoteCommand tmux new-session -A -s keroagile 'KeroAgile'
+```
+
+```bash
+ssh keroagile          # opens (or reattaches to) the board session
+```
+
+`tmux new-session -A` attaches to an existing session if one is running, or creates a new one. Your board stays alive between SSH sessions — close the terminal and re-connect where you left off.
+
+For screen users:
+
+```bash
+RemoteCommand screen -DR keroagile KeroAgile
+```
+
+### One-shot SSH alias (read-only friendly)
+
+If you just want quick CLI access without keeping a persistent session:
+
+```bash
+# ~/.bashrc / ~/.zshrc
+alias ka='ssh myserver.local KeroAgile'
+alias ka-tasks='ssh myserver.local KeroAgile task list --project MYAPP'
+```
+
+### Database location
+
+The SQLite database lives at `~/.config/keroagile/keroagile.db` on whichever machine runs the binary. Keep it on one machine and access it over SSH; or copy the file to migrate between machines.
+
+---
+
 ## PR auto-transition
 
 Link a PR number to a task; KeroAgile polls GitHub every 60 seconds while the TUI is open. When the PR merges, the task moves to `done` automatically.

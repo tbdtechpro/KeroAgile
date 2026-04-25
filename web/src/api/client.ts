@@ -14,6 +14,17 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY)
 }
 
+export function getCurrentUserId(): string | null {
+  const token = getToken()
+  if (!token) return null
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return (payload.sub as string) ?? null
+  } catch {
+    return null
+  }
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   const token = getToken()

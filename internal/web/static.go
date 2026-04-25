@@ -3,16 +3,17 @@ package web
 import (
 	"embed"
 	"io/fs"
+	"net/http"
 )
 
 //go:embed all:dist
 var distFS embed.FS
 
 // FS returns the embedded web/dist filesystem rooted at "dist/".
-func FS() fs.FS {
+func FS() http.FileSystem {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
-		panic(err) // can only fail if "dist" doesn't exist in embed
+		panic(err)
 	}
-	return sub
+	return http.FS(sub)
 }

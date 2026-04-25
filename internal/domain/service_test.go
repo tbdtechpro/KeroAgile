@@ -151,6 +151,7 @@ func (m *mockStore) GetUser(id string) (*domain.User, error) {
 	}
 	return u, nil
 }
+func (m *mockStore) SetUserPassword(id, hash string) error { return nil }
 
 func TestServiceCreateTask(t *testing.T) {
 	svc := domain.NewService(newMock())

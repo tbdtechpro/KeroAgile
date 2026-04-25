@@ -363,6 +363,75 @@ KeroAgile project list --json | jq '.[] | {id, repo_path}'
 
 ---
 
+## API server
+
+`KeroAgile serve` starts a REST API on port 7432. This is the foundation for multi-user access, the upcoming React web UI, and remote CLI mode.
+
+### Setup
+
+```bash
+# Set a JWT signing secret (tokens persist across restarts)
+# Add to ~/.config/keroagile/config.toml:
+#   api_secret = "your-random-secret-here"
+
+# Set a password for a user (required for API login)
+KeroAgile user set-password alice
+
+# Start the server
+KeroAgile serve                    # listens on :7432
+KeroAgile serve --addr :8080       # custom port
+```
+
+### Authentication
+
+```bash
+# Login to get a JWT token (valid 24h)
+curl -s -X POST http://localhost:7432/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"alice","password":"mypassword"}' | jq -r .token
+
+# Use the token in subsequent requests
+TOKEN=<paste-token>
+curl -s http://localhost:7432/api/tasks?project_id=MYAPP \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/auth/login` | Login → JWT token |
+| `GET` | `/api/projects` | List projects |
+| `POST` | `/api/projects` | Create project |
+| `GET` | `/api/tasks` | List tasks (`?project_id=`, `?status=`, `?assignee_id=`, `?sprint_id=`) |
+| `POST` | `/api/tasks` | Create task |
+| `GET` | `/api/tasks/{id}` | Get task |
+| `PATCH` | `/api/tasks/{id}` | Update / move task |
+| `DELETE` | `/api/tasks/{id}` | Delete task |
+| `GET` | `/api/users` | List users |
+| `GET` | `/api/sprints` | List sprints (`?project_id=`) |
+| `POST` | `/api/sprints` | Create sprint |
+| `GET` | `/api/sprints/{id}` | Get sprint |
+
+### Docker with API server
+
+```yaml
+# docker-compose.yml — override the default mcp command
+services:
+  keroagile:
+    image: keroagile:latest
+    command: ["serve", "--addr", ":7432"]
+    environment:
+      KEROAGILE_DATA_DIR: /data
+      # Alternatively set api_secret via mounted config.toml
+    ports:
+      - "7432:7432"
+    volumes:
+      - keroagile-data:/data
+```
+
+---
+
 ## Architecture
 
 ```

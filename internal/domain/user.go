@@ -1,9 +1,10 @@
 package domain
 
 type User struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
-	IsAgent     bool   `json:"is_agent"`
+	ID           string `json:"id"`
+	DisplayName  string `json:"display_name"`
+	IsAgent      bool   `json:"is_agent"`
+	PasswordHash string `json:"-"` // bcrypt hash; never serialised
 }
 
 func (u User) DisplayPrefix() string {

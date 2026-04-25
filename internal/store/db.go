@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -23,8 +24,25 @@ func Open(path string) (*sql.DB, error) {
 }
 
 func migrate(db *sql.DB) error {
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	return migrateAlter(db)
+}
+
+// migrateAlter applies additive ALTER TABLE migrations. Each statement is
+// idempotent: SQLite returns "duplicate column name" when a column already
+// exists, which we swallow.
+func migrateAlter(db *sql.DB) error {
+	alters := []string{
+		`ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, stmt := range alters {
+		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
+	}
+	return nil
 }
 
 const schema = `

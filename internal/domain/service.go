@@ -213,6 +213,11 @@ func (s *Service) GetUser(id string) (*User, error) {
 	return s.store.GetUser(id)
 }
 
+// SetUserPasswordHash stores a pre-computed bcrypt hash for a user.
+func (s *Service) SetUserPasswordHash(id, hash string) error {
+	return s.store.SetUserPassword(id, hash)
+}
+
 func (s *Service) AddDep(blockerID, blockedID string) error {
 	return s.store.AddDep(blockerID, blockedID)
 }

@@ -38,4 +38,5 @@ type Store interface {
 	CreateUser(u *User) error
 	ListUsers() ([]*User, error)
 	GetUser(id string) (*User, error)
+	SetUserPassword(id, hash string) error
 }

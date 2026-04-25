@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/tbdtechpro/KeroAgile/internal/api"
+	"golang.org/x/term"
 )
 
 var userCmd = &cobra.Command{Use: "user", Short: "Manage team members"}
@@ -50,7 +53,37 @@ var userListCmd = &cobra.Command{
 	},
 }
 
+var userSetPasswordCmd = &cobra.Command{
+	Use:   "set-password <user-id>",
+	Short: "Set a user's API password (for KeroAgile serve)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		userID := args[0]
+		if _, err := svc.GetUser(userID); err != nil {
+			return fmt.Errorf("user %q not found", userID)
+		}
+		fmt.Printf("New password for %s: ", userID)
+		raw, err := term.ReadPassword(int(syscall.Stdin))
+		fmt.Println()
+		if err != nil {
+			return err
+		}
+		if len(raw) == 0 {
+			return fmt.Errorf("password cannot be empty")
+		}
+		hash, err := api.HashPassword(string(raw))
+		if err != nil {
+			return err
+		}
+		if err := svc.SetUserPasswordHash(userID, hash); err != nil {
+			return err
+		}
+		fmt.Printf("password set for %s\n", userID)
+		return nil
+	},
+}
+
 func init() {
 	userAddCmd.Flags().Bool("agent", false, "mark as AI agent")
-	userCmd.AddCommand(userAddCmd, userListCmd)
+	userCmd.AddCommand(userAddCmd, userListCmd, userSetPasswordCmd)
 }

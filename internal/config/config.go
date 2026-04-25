@@ -10,6 +10,10 @@ import (
 type Config struct {
 	DefaultProject  string `toml:"default_project"`
 	DefaultAssignee string `toml:"default_assignee"`
+	// API server settings (used by 'KeroAgile serve')
+	APISecret   string `toml:"api_secret"`   // JWT signing key; auto-generated if empty
+	RemoteURL   string `toml:"remote_url"`   // optional: connect to a remote KeroAgile server
+	RemoteToken string `toml:"remote_token"` // bearer token for remote_url
 }
 
 func DefaultPath() string {

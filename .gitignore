@@ -3,3 +3,4 @@ KeroAgile
 .worktrees/
 *.db
 docs/superpowers/
+dist/

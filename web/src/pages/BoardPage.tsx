@@ -8,6 +8,9 @@ import TaskModal from '../components/TaskModal'
 import TaskDetail from '../components/TaskDetail'
 import SprintSidebar from '../components/SprintSidebar'
 import ToastContainer from '../components/Toast'
+import { SyncStatus } from '../components/SyncStatus'
+import { FrozenProjectBanner } from '../components/FrozenProjectBanner'
+import { AddSyncedProjectModal } from '../components/AddSyncedProjectModal'
 
 type ModalState =
   | { open: false }
@@ -22,11 +25,13 @@ export default function BoardPage() {
   const [sprintFilter, setSprintFilter] = useState<number | null | undefined>(undefined)
   const [myTasksOnly, setMyTasksOnly] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [showAddSynced, setShowAddSynced] = useState(false)
 
   const { toasts, push: pushToast, dismiss } = useToast()
   const moveTask = useMoveTask()
 
   const currentProjectId = selectedProjectId ?? projects[0]?.id ?? null
+  const currentProject = projects.find(p => p.id === currentProjectId) ?? null
   const { data: sprintSummaries = [] } = useSprints(currentProjectId ?? undefined)
   const { data: allTasks = [], isLoading: tasksLoading } = useTasks({
     project_id: currentProjectId ?? undefined,
@@ -118,6 +123,14 @@ export default function BoardPage() {
           </button>
         ))}
         <button
+          onClick={() => setShowAddSynced(true)}
+          className="mb-1 px-2 py-1 text-xs rounded transition-opacity opacity-60 hover:opacity-100"
+          style={{ color: 'var(--ka-muted)', background: 'var(--ka-surface)' }}
+        >
+          + Add synced project
+        </button>
+        <SyncStatus />
+        <button
           onClick={() => setModal({ open: true, status: 'backlog' })}
           className="ml-auto mb-1 px-2 py-1 text-xs rounded transition-opacity opacity-60 hover:opacity-100"
           style={{ color: 'var(--ka-accent-lt)', background: 'var(--ka-surface)' }}
@@ -139,6 +152,14 @@ export default function BoardPage() {
         />
 
         <div className="flex-1 overflow-x-auto p-4">
+          {currentProject?.sync_status === 'frozen' && (
+            <FrozenProjectBanner
+              projectId={currentProject.id}
+              primaryUrl={currentProject.sync_origin ?? ''}
+              onDetach={() => alert('Detach is not yet implemented. Restart the server without this project in config to detach.')}
+              onDelete={() => alert('Delete is not yet implemented.')}
+            />
+          )}
           {tasksLoading ? (
             <div className="text-sm" style={{ color: 'var(--ka-muted)' }}>Loading tasks…</div>
           ) : currentProjectId ? (
@@ -172,6 +193,8 @@ export default function BoardPage() {
       )}
 
       <ToastContainer toasts={toasts} dismiss={dismiss} />
+
+      {showAddSynced && <AddSyncedProjectModal onClose={() => setShowAddSynced(false)} />}
     </div>
   )
 }

@@ -26,6 +26,8 @@ export interface Project {
   name: string
   repo_path: string
   sprint_mode: boolean
+  sync_origin?: string
+  sync_status?: string
 }
 
 export interface User {

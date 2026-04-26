@@ -107,6 +107,14 @@ export const api = {
     return request('POST', '/api/sprints', { name, project_id: projectId, start_date: startDate, end_date: endDate })
   },
 
+  // Secondary-side sync
+  getSyncStatus(): Promise<{ state: 'online' | 'reconnecting' | 'offline' | 'standalone' }> {
+    return request('GET', '/api/sync/status')
+  },
+  addSyncedProject(primaryUrl: string, apiToken: string, projectId: string): Promise<{ project_id: string; note: string }> {
+    return request('POST', '/api/sync/join', { primary_url: primaryUrl, api_token: apiToken, project_id: projectId })
+  },
+
   // Sync — primary mode management
   syncListSecondaries(): Promise<Secondary[]> {
     return request('GET', '/api/sync/secondaries')

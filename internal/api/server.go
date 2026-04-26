@@ -21,6 +21,7 @@ const (
 type Server struct {
 	svc        *domain.Service
 	store      syncsrv.PrimaryStore
+	rawStore   domain.Store          // for entity upserts during snapshot ingestion
 	syncClient *syncsrv.Client // non-nil on secondary installs; nil for standalone/primary
 	secret     string
 	syncMode   syncsrv.Mode
@@ -29,8 +30,8 @@ type Server struct {
 
 // New creates a Server and registers all routes. syncClient must be non-nil when mode is
 // ModeSecondary so that write proxying and 503-on-offline work; pass nil for standalone/primary.
-func New(svc *domain.Service, st syncsrv.PrimaryStore, secret string, mode syncsrv.Mode, syncClient *syncsrv.Client) *Server {
-	s := &Server{svc: svc, store: st, syncClient: syncClient, secret: secret, syncMode: mode, mux: http.NewServeMux()}
+func New(svc *domain.Service, st syncsrv.PrimaryStore, rawSt domain.Store, secret string, mode syncsrv.Mode, syncClient *syncsrv.Client) *Server {
+	s := &Server{svc: svc, store: st, rawStore: rawSt, syncClient: syncClient, secret: secret, syncMode: mode, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -56,6 +57,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/sprints", s.auth(s.handleListSprints))
 	s.mux.HandleFunc("POST /api/sprints", s.auth(s.handleCreateSprint))
 	s.mux.HandleFunc("GET /api/sprints/{id}", s.auth(s.handleGetSprint))
+
+	// Sync routes — secondary-side status and join
+	s.mux.HandleFunc("GET /api/sync/status", s.auth(s.handleSyncStatus))
+	s.mux.HandleFunc("POST /api/sync/join", s.auth(s.handleSyncJoin))
 
 	// Sync routes
 	s.mux.HandleFunc("GET /api/sync/heartbeat", s.syncAuth(s.handleSyncHeartbeat))

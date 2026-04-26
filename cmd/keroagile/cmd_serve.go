@@ -71,7 +71,7 @@ Configuration:
 		}
 
 		// API routes (syncClient is nil for non-secondary mode).
-		apiSrv := api.New(svc, st, secret, syncMode, syncClient)
+		apiSrv := api.New(svc, st, st, secret, syncMode, syncClient)
 		mux.Handle("/api/", apiSrv)
 
 		// Start daemon and heartbeat if secondary with synced projects.

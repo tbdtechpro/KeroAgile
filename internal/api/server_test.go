@@ -23,7 +23,7 @@ func newTestServer(t *testing.T) (*api.Server, *domain.Service, *store.Store) {
 	t.Cleanup(func() { db.Close() })
 	st := store.New(db)
 	svc := domain.NewService(st)
-	return api.New(svc, st, "test-secret", syncsrv.ModeStandalone, nil), svc, st
+	return api.New(svc, st, st, "test-secret", syncsrv.ModeStandalone, nil), svc, st
 }
 
 func TestLoginInvalidCredentials(t *testing.T) {
@@ -189,7 +189,7 @@ func TestSyncedProjectWriteIsProxied(t *testing.T) {
 		APIToken:   "tok",
 	}
 	client := syncsrv.NewClient(cfg, st)
-	srv := api.New(svc, st, "test-secret", syncsrv.ModeSecondary, client)
+	srv := api.New(svc, st, st, "test-secret", syncsrv.ModeSecondary, client)
 
 	require.NoError(t, svc.CreateProject("TL", "TestLog", ""))
 	require.NoError(t, st.SetSyncOrigin("TL", fakePrimary.URL))

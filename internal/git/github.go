@@ -1,8 +1,10 @@
 package git
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 )
 
 type PRStatus struct {
@@ -46,6 +48,29 @@ func PRView(repoPath string, prNumber int) (*PRStatus, error) {
 		URL:      result.URL,
 		Comments: len(result.Comments),
 	}, nil
+}
+
+// PRForBranch returns the PR for the given branch, or nil if no PR exists.
+// Returns (nil, nil) when gh reports no PR found.
+func PRForBranch(repoPath, branch string) (*PRStatus, error) {
+	out, err := execGH("pr", "view", branch, "--json", "number,state", "-R", repoPath)
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if bytes.Contains(exitErr.Stderr, []byte("no pull requests found")) ||
+				bytes.Contains(exitErr.Stderr, []byte("Could not resolve to a")) {
+				return nil, nil
+			}
+		}
+		return nil, fmt.Errorf("gh pr view %s: %w", branch, err)
+	}
+	var p struct {
+		State  string `json:"state"`
+		Number int    `json:"number"`
+	}
+	if err := json.Unmarshal([]byte(out), &p); err != nil {
+		return nil, err
+	}
+	return &PRStatus{State: p.State, Number: p.Number}, nil
 }
 
 // ListOpenPRs returns open PRs for the repo, used for auto-detect.

@@ -3,6 +3,7 @@ package syncsrv_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -11,9 +12,9 @@ import (
 )
 
 func TestHeartbeatStateTransitions(t *testing.T) {
-	var serverUp bool
+	var serverUp atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if serverUp {
+		if serverUp.Load() {
 			w.WriteHeader(http.StatusOK)
 		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -29,16 +30,16 @@ func TestHeartbeatStateTransitions(t *testing.T) {
 	}
 	client := syncsrv.NewClient(cfg, nil) // nil store — just testing state machine
 
-	serverUp = true
+	serverUp.Store(true)
 	client.Start()
 	time.Sleep(200 * time.Millisecond)
 	assert.Equal(t, syncsrv.StateOnline, client.State())
 
-	serverUp = false
+	serverUp.Store(false)
 	time.Sleep(500 * time.Millisecond) // 10+ heartbeat intervals
 	assert.Equal(t, syncsrv.StateOffline, client.State())
 
-	serverUp = true
+	serverUp.Store(true)
 	time.Sleep(200 * time.Millisecond)
 	assert.Equal(t, syncsrv.StateOnline, client.State())
 

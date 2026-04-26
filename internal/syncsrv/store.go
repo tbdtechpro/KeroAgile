@@ -21,4 +21,5 @@ type PrimaryStore interface {
 type SecondaryStore interface {
 	SetProjectSyncCursor(projectID string, cursor int64) error
 	SetProjectSyncStatus(projectID string, status string) error
+	SetSyncOrigin(projectID, origin string) error
 }

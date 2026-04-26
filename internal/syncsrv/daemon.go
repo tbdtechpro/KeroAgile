@@ -3,6 +3,7 @@ package syncsrv
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
@@ -27,9 +28,76 @@ func NewDaemon(client *Client, st SecondaryStore, rawStore domain.Store) *Daemon
 	}
 }
 
+// InitialSync fetches a snapshot from the primary and applies all entities locally.
+// Call this before Start() to seed the secondary's local store.
+func (d *Daemon) InitialSync(ctx context.Context, projectIDs []string) error {
+	snap, err := d.client.FetchSnapshot(ctx, projectIDs)
+	if err != nil {
+		return err
+	}
+	for _, p := range snap.Projects {
+		existing, _ := d.rawStore.GetProject(p.ID)
+		if existing == nil {
+			if err := d.rawStore.CreateProject(p); err != nil {
+				return fmt.Errorf("create project %s: %w", p.ID, err)
+			}
+		} else {
+			if err := d.rawStore.UpdateProject(p); err != nil {
+				return fmt.Errorf("update project %s: %w", p.ID, err)
+			}
+		}
+	}
+	for _, u := range snap.Users {
+		existing, _ := d.rawStore.GetUser(u.ID)
+		if existing == nil {
+			if err := d.rawStore.CreateUser(u); err != nil {
+				return fmt.Errorf("create user %s: %w", u.ID, err)
+			}
+		}
+	}
+	for _, sp := range snap.Sprints {
+		existing, _ := d.rawStore.GetSprint(sp.ID)
+		if existing == nil {
+			if _, err := d.rawStore.CreateSprint(sp); err != nil {
+				return fmt.Errorf("create sprint %d: %w", sp.ID, err)
+			}
+		} else {
+			if err := d.rawStore.UpdateSprint(sp); err != nil {
+				return fmt.Errorf("update sprint %d: %w", sp.ID, err)
+			}
+		}
+	}
+	for _, t := range snap.Tasks {
+		existing, _ := d.rawStore.GetTask(t.ID)
+		if existing == nil {
+			if err := d.rawStore.CreateTask(t); err != nil {
+				return fmt.Errorf("create task %s: %w", t.ID, err)
+			}
+		} else {
+			if err := d.rawStore.UpdateTask(t); err != nil {
+				return fmt.Errorf("update task %s: %w", t.ID, err)
+			}
+		}
+	}
+	for _, pid := range projectIDs {
+		if err := d.store.SetProjectSyncCursor(pid, snap.Cursor); err != nil {
+			return fmt.Errorf("set sync cursor for project %s: %w", pid, err)
+		}
+		if err := d.store.SetSyncOrigin(pid, d.client.PrimaryURL()); err != nil {
+			return fmt.Errorf("set sync origin for project %s: %w", pid, err)
+		}
+	}
+	return nil
+}
+
 func (d *Daemon) Start(syncedProjects []string, startCursor int64) {
 	ctx, cancel := context.WithCancel(context.Background())
 	d.cancel = cancel
+	d.client.SetOnForbidden(func(pids []string) {
+		for _, pid := range pids {
+			_ = d.store.SetProjectSyncStatus(pid, "frozen")
+		}
+	})
 	// Note: d.client.Start() is NOT called here — the caller starts the client heartbeat.
 	go d.client.ConsumeStream(ctx, syncedProjects, startCursor, d.applyEvent)
 }

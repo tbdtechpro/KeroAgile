@@ -84,6 +84,22 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		userID, err := validateToken(token, s.secret)
 		if err != nil {
+			// Also accept sync tokens so proxied writes from a secondary can reach
+			// this primary's task/sprint endpoints using the secondary's sync token.
+			if s.store != nil {
+				sec, serr := s.store.GetSecondaryByTokenHash(syncsrv.SHA256Hex(token))
+				if serr == nil && sec != nil {
+					_ = s.store.TouchSecondary(sec.ID)
+					// Only allow proxied writes (secondary always sets X-Sync-Origin).
+					if r.Header.Get("X-Sync-Origin") == "" {
+						writeErr(w, http.StatusForbidden, "sync tokens cannot authenticate user routes directly")
+						return
+					}
+					r = r.WithContext(context.WithValue(r.Context(), ctxKeySecondaryID, sec.ID))
+					next(w, r)
+					return
+				}
+			}
 			writeErr(w, http.StatusUnauthorized, "invalid token")
 			return
 		}

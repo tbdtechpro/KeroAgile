@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 // ClientConfig configures a secondary's connection to its primary.
@@ -37,6 +40,15 @@ func (c ClientConfig) threshold() int {
 	return c.OfflineThreshold
 }
 
+// SnapshotResult holds the snapshot response from the primary.
+type SnapshotResult struct {
+	Projects []*domain.Project `json:"projects"`
+	Tasks    []*domain.Task    `json:"tasks"`
+	Sprints  []*domain.Sprint  `json:"sprints"`
+	Users    []*domain.User    `json:"users"`
+	Cursor   int64             `json:"cursor"`
+}
+
 // Client manages the secondary's connection to the primary: heartbeat + SSE stream.
 type Client struct {
 	cfg         ClientConfig
@@ -47,12 +59,26 @@ type Client struct {
 	cancel      context.CancelFunc
 	hc          *http.Client
 	StateChange func(SyncState) // optional callback on state change
+	onForbidden func([]string) // called when primary returns 403 for the stream; guarded by mu
 }
 
 func NewClient(cfg ClientConfig, store SecondaryStore) *Client {
 	c := &Client{cfg: cfg, store: store, hc: &http.Client{Timeout: 10 * time.Second}}
 	c.state.Store(StateOnline)
 	return c
+}
+
+// SetOnForbidden sets the callback invoked when the primary returns 403 on the stream.
+func (c *Client) SetOnForbidden(fn func([]string)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onForbidden = fn
+}
+
+func (c *Client) getOnForbidden() func([]string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.onForbidden
 }
 
 func (c *Client) State() SyncState {
@@ -80,6 +106,36 @@ func (c *Client) Stop() {
 	if c.cancel != nil {
 		c.cancel()
 	}
+}
+
+// PrimaryURL returns the configured primary URL.
+func (c *Client) PrimaryURL() string { return c.cfg.PrimaryURL }
+
+// FetchSnapshot calls the primary's /api/sync/snapshot endpoint and returns parsed data.
+func (c *Client) FetchSnapshot(ctx context.Context, projectIDs []string) (*SnapshotResult, error) {
+	q := url.Values{}
+	for _, id := range projectIDs {
+		q.Add("project_ids", id)
+	}
+	u := c.cfg.PrimaryURL + "/api/sync/snapshot?" + q.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.cfg.APIToken)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("snapshot: primary returned %s", resp.Status)
+	}
+	var result SnapshotResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("snapshot: decode: %w", err)
+	}
+	return &result, nil
 }
 
 func (c *Client) heartbeatLoop(ctx context.Context) {
@@ -168,15 +224,18 @@ func (c *Client) Proxy(w http.ResponseWriter, r *http.Request, targetPath string
 // ConsumeStream connects to the primary's SSE stream and calls apply for each inbound change.
 // Reconnects automatically until ctx is cancelled.
 func (c *Client) ConsumeStream(ctx context.Context, projectIDs []string, cursor int64, apply func(ChangeEvent)) {
-	ids := strings.Join(projectIDs, "&project_ids=")
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		url := fmt.Sprintf("%s/api/sync/stream?project_ids=%s&since=%d", c.cfg.PrimaryURL, ids, cursor)
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		q := url.Values{}
+		for _, id := range projectIDs {
+			q.Add("project_ids", id)
+		}
+		streamURL := fmt.Sprintf("%s/api/sync/stream?since=%d&%s", c.cfg.PrimaryURL, cursor, q.Encode())
+		req, err := http.NewRequestWithContext(ctx, "GET", streamURL, nil)
 		if err != nil {
 			select {
 			case <-ctx.Done():
@@ -188,6 +247,22 @@ func (c *Client) ConsumeStream(ctx context.Context, projectIDs []string, cursor 
 		req.Header.Set("Authorization", "Bearer "+c.cfg.APIToken)
 		resp, err := c.hc.Do(req)
 		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
+			}
+			continue
+		}
+		if resp.StatusCode == http.StatusForbidden {
+			resp.Body.Close()
+			if fn := c.getOnForbidden(); fn != nil {
+				fn(projectIDs)
+			}
+			return // don't retry — frozen, needs manual intervention
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
 			select {
 			case <-ctx.Done():
 				return

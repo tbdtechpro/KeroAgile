@@ -52,6 +52,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PATCH /api/tasks/{id}", s.auth(s.handleUpdateTask))
 	s.mux.HandleFunc("DELETE /api/tasks/{id}", s.auth(s.handleDeleteTask))
 
+	s.mux.HandleFunc("GET /api/search/tasks", s.auth(s.handleSearchTasks))
+	s.mux.HandleFunc("POST /api/tasks/{id}/blockers", s.auth(s.handleAddBlocker))
+	s.mux.HandleFunc("DELETE /api/tasks/{id}/blockers/{blocker_id}", s.auth(s.handleRemoveBlocker))
+
 	s.mux.HandleFunc("GET /api/users", s.auth(s.handleListUsers))
 
 	s.mux.HandleFunc("GET /api/sprints", s.auth(s.handleListSprints))

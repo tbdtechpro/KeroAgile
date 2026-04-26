@@ -283,3 +283,127 @@ func TestAddAndListSecondaries(t *testing.T) {
 	require.Equal(t, "true", hbResp["ok"])
 	require.NotEmpty(t, hbResp["ts"])
 }
+
+func TestSearchTasks(t *testing.T) {
+	srv, svc, _ := newTestServer(t)
+	require.NoError(t, svc.CreateProject("KA", "KeroAgile", ""))
+	require.NoError(t, svc.CreateProject("KCP", "KeroCareer", ""))
+
+	_, err := svc.CreateUser("alice", "Alice", false)
+	require.NoError(t, err)
+	hash, _ := api.HashPassword("pw")
+	require.NoError(t, svc.SetUserPasswordHash("alice", hash))
+
+	_, err = svc.CreateTask("Add JWT auth", "", "KA", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+	_, err = svc.CreateTask("Career DB migration", "", "KCP", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+
+	loginBody, _ := json.Marshal(map[string]string{"user_id": "alice", "password": "pw"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBuffer(loginBody))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	var lr map[string]string
+	json.NewDecoder(w.Body).Decode(&lr)
+	token := lr["token"]
+
+	authed := func(method, path string, body []byte) *httptest.ResponseRecorder {
+		var buf *bytes.Buffer
+		if body != nil {
+			buf = bytes.NewBuffer(body)
+		} else {
+			buf = &bytes.Buffer{}
+		}
+		r := httptest.NewRequest(method, path, buf)
+		r.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, r)
+		return rr
+	}
+
+	// Title match
+	rr := authed(http.MethodGet, "/api/search/tasks?q=JWT", nil)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp struct {
+		Tasks []domain.TaskSummary `json:"tasks"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(t, resp.Tasks, 1)
+	assert.Equal(t, "KA", resp.Tasks[0].ProjectID)
+
+	// Empty query returns all
+	rr = authed(http.MethodGet, "/api/search/tasks?q=", nil)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp2 struct {
+		Tasks []domain.TaskSummary `json:"tasks"`
+	}
+	json.NewDecoder(rr.Body).Decode(&resp2)
+	assert.GreaterOrEqual(t, len(resp2.Tasks), 2)
+}
+
+func TestAddAndRemoveBlocker(t *testing.T) {
+	srv, svc, _ := newTestServer(t)
+	require.NoError(t, svc.CreateProject("KA", "KeroAgile", ""))
+	require.NoError(t, svc.CreateProject("KCP", "KeroCareer", ""))
+
+	_, err := svc.CreateUser("bob", "Bob", false)
+	require.NoError(t, err)
+	hash, _ := api.HashPassword("pw")
+	require.NoError(t, svc.SetUserPasswordHash("bob", hash))
+
+	kaTask, err := svc.CreateTask("KA task", "", "KA", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+	kcpTask, err := svc.CreateTask("KCP task", "", "KCP", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+
+	loginBody, _ := json.Marshal(map[string]string{"user_id": "bob", "password": "pw"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBuffer(loginBody))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	var lr map[string]string
+	json.NewDecoder(w.Body).Decode(&lr)
+	token := lr["token"]
+
+	authed := func(method, path string, body []byte) *httptest.ResponseRecorder {
+		var buf *bytes.Buffer
+		if body != nil {
+			buf = bytes.NewBuffer(body)
+		} else {
+			buf = &bytes.Buffer{}
+		}
+		r := httptest.NewRequest(method, path, buf)
+		r.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, r)
+		return rr
+	}
+
+	// Add cross-project blocker
+	addBody, _ := json.Marshal(map[string]string{"blocker_id": kcpTask.ID})
+	rr := authed(http.MethodPost, "/api/tasks/"+kaTask.ID+"/blockers", addBody)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	// Verify via GetTask
+	rr = authed(http.MethodGet, "/api/tasks/"+kaTask.ID, nil)
+	var task domain.Task
+	json.NewDecoder(rr.Body).Decode(&task)
+	assert.Contains(t, task.Blockers, kcpTask.ID)
+	assert.Len(t, task.BlockerDetails, 1)
+
+	// Remove the blocker
+	rr = authed(http.MethodDelete, "/api/tasks/"+kaTask.ID+"/blockers/"+kcpTask.ID, nil)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	// Verify removed
+	rr = authed(http.MethodGet, "/api/tasks/"+kaTask.ID, nil)
+	json.NewDecoder(rr.Body).Decode(&task)
+	assert.Empty(t, task.Blockers)
+
+	// 400 on missing blocker_id
+	rr = authed(http.MethodPost, "/api/tasks/"+kaTask.ID+"/blockers", []byte(`{}`))
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	// 404 on unknown task
+	rr = authed(http.MethodPost, "/api/tasks/FAKE-999/blockers", addBody)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}

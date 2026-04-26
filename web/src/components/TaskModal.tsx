@@ -44,7 +44,7 @@ export default function TaskModal({
   const [blockerQuery, setBlockerQuery] = useState('')
   const [blockerResults, setBlockerResults] = useState<TaskSummary[]>([])
   const [selectedBlockers, setSelectedBlockers] = useState<TaskSummary[]>(
-    task?.blocker_details?.filter(Boolean) as TaskSummary[] ?? []
+    task?.blocker_details?.filter((b): b is TaskSummary => b != null) ?? []
   )
   const [showDropdown, setShowDropdown] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -298,7 +298,7 @@ export default function TaskModal({
                   value={blockerQuery}
                   onChange={e => setBlockerQuery(e.target.value)}
                   onFocus={() => blockerResults.length > 0 && setShowDropdown(true)}
-                  onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                  onBlur={() => setShowDropdown(false)}
                   className="w-full text-xs px-2 py-1 rounded border"
                   style={{
                     background: 'var(--ka-inset)',

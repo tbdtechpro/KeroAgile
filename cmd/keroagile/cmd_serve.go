@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/tbdtechpro/KeroAgile/internal/api"
+	"github.com/tbdtechpro/KeroAgile/internal/syncsrv"
 	webstatic "github.com/tbdtechpro/KeroAgile/internal/web"
 )
 
@@ -52,8 +53,14 @@ Configuration:
 
 		mux := http.NewServeMux()
 
+		// Determine sync mode; default to standalone if not configured.
+		syncMode := syncsrv.Mode(cfg.Sync.Mode)
+		if syncMode == "" {
+			syncMode = syncsrv.ModeStandalone
+		}
+
 		// API routes
-		apiSrv := api.New(svc, secret)
+		apiSrv := api.New(svc, st, secret, syncMode)
 		mux.Handle("/api/", apiSrv)
 
 		// Embedded React web UI — SPA with client-side routing

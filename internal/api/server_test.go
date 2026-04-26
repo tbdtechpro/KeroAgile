@@ -11,19 +11,21 @@ import (
 	"github.com/tbdtechpro/KeroAgile/internal/api"
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
 	"github.com/tbdtechpro/KeroAgile/internal/store"
+	"github.com/tbdtechpro/KeroAgile/internal/syncsrv"
 )
 
-func newTestServer(t *testing.T) (*api.Server, *domain.Service) {
+func newTestServer(t *testing.T) (*api.Server, *domain.Service, *store.Store) {
 	t.Helper()
 	db, err := store.Open(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	svc := domain.NewService(store.New(db))
-	return api.New(svc, "test-secret"), svc
+	st := store.New(db)
+	svc := domain.NewService(st)
+	return api.New(svc, st, "test-secret", syncsrv.ModeStandalone), svc, st
 }
 
 func TestLoginInvalidCredentials(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	body := `{"user_id":"alice","password":"wrong"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
@@ -32,7 +34,7 @@ func TestLoginInvalidCredentials(t *testing.T) {
 }
 
 func TestLoginAndAccessProtected(t *testing.T) {
-	srv, svc := newTestServer(t)
+	srv, svc, _ := newTestServer(t)
 
 	// Create a user and set password
 	_, err := svc.CreateUser("alice", "Alice", false)
@@ -62,7 +64,7 @@ func TestLoginAndAccessProtected(t *testing.T) {
 }
 
 func TestProtectedWithoutToken(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -70,7 +72,7 @@ func TestProtectedWithoutToken(t *testing.T) {
 }
 
 func TestTaskCRUD(t *testing.T) {
-	srv, svc := newTestServer(t)
+	srv, svc, _ := newTestServer(t)
 
 	require.NoError(t, svc.CreateProject("TST", "Test", ""))
 
@@ -123,4 +125,78 @@ func TestTaskCRUD(t *testing.T) {
 	// Delete task
 	rr = authed(http.MethodDelete, "/api/tasks/"+taskID, nil)
 	require.Equal(t, http.StatusNoContent, rr.Code)
+}
+
+func TestSyncHeartbeatRequiresAuth(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/sync/heartbeat", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestAddAndListSecondaries(t *testing.T) {
+	srv, svc, _ := newTestServer(t)
+
+	// Create an admin user and obtain a JWT.
+	_, err := svc.CreateUser("admin", "Admin", false)
+	require.NoError(t, err)
+	hash, err := api.HashPassword("adminpw")
+	require.NoError(t, err)
+	require.NoError(t, svc.SetUserPasswordHash("admin", hash))
+
+	loginBody, _ := json.Marshal(map[string]string{"user_id": "admin", "password": "adminpw"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBuffer(loginBody))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var lr map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&lr))
+	jwtToken := lr["token"]
+	require.NotEmpty(t, jwtToken)
+
+	authed := func(method, path string, body []byte) *httptest.ResponseRecorder {
+		var buf *bytes.Buffer
+		if body != nil {
+			buf = bytes.NewBuffer(body)
+		} else {
+			buf = &bytes.Buffer{}
+		}
+		r := httptest.NewRequest(method, path, buf)
+		r.Header.Set("Authorization", "Bearer "+jwtToken)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, r)
+		return rr
+	}
+
+	// POST /api/sync/secondaries — register a new secondary.
+	addBody, _ := json.Marshal(map[string]string{"id": "office-node", "display_name": "Office Node"})
+	rr := authed(http.MethodPost, "/api/sync/secondaries", addBody)
+	require.Equal(t, http.StatusCreated, rr.Code)
+
+	var addResp map[string]string
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&addResp))
+	syncToken := addResp["token"]
+	require.NotEmpty(t, syncToken)
+
+	// GET /api/sync/secondaries — list secondaries.
+	rr = authed(http.MethodGet, "/api/sync/secondaries", nil)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var listResp []map[string]interface{}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&listResp))
+	require.Len(t, listResp, 1)
+	require.Equal(t, "office-node", listResp[0]["id"])
+
+	// GET /api/sync/heartbeat with the sync token — should return 200.
+	heartbeatReq := httptest.NewRequest(http.MethodGet, "/api/sync/heartbeat", nil)
+	heartbeatReq.Header.Set("Authorization", "Bearer "+syncToken)
+	hw := httptest.NewRecorder()
+	srv.ServeHTTP(hw, heartbeatReq)
+	require.Equal(t, http.StatusOK, hw.Code)
+
+	var hbResp map[string]string
+	require.NoError(t, json.NewDecoder(hw.Body).Decode(&hbResp))
+	require.Equal(t, "true", hbResp["ok"])
+	require.NotEmpty(t, hbResp["ts"])
 }

@@ -6,16 +6,17 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 	"github.com/tbdtechpro/KeroAgile/internal/config"
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
 	"github.com/tbdtechpro/KeroAgile/internal/store"
 	"github.com/tbdtechpro/KeroAgile/internal/tui"
+	"golang.org/x/term"
 )
 
 var (
 	jsonFlag bool
 	svc      *domain.Service
+	st       *store.Store
 	cfg      *config.Config
 )
 
@@ -40,7 +41,8 @@ var rootCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("db: %w", err)
 		}
-		svc = domain.NewService(store.New(db))
+		st = store.New(db)
+		svc = domain.NewService(st)
 
 		if !isTerminal(os.Stdout) {
 			jsonFlag = true

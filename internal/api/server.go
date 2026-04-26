@@ -7,22 +7,28 @@ import (
 	"strings"
 
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/syncsrv"
 )
 
 type ctxKey int
 
-const ctxKeyUserID ctxKey = 0
+const (
+	ctxKeyUserID      ctxKey = 0
+	ctxKeySecondaryID ctxKey = 1
+)
 
 // Server is the KeroAgile HTTP API server.
 type Server struct {
-	svc    *domain.Service
-	secret string
-	mux    *http.ServeMux
+	svc      *domain.Service
+	store    syncsrv.PrimaryStore
+	secret   string
+	syncMode syncsrv.Mode
+	mux      *http.ServeMux
 }
 
 // New creates a Server and registers all routes.
-func New(svc *domain.Service, secret string) *Server {
-	s := &Server{svc: svc, secret: secret, mux: http.NewServeMux()}
+func New(svc *domain.Service, st syncsrv.PrimaryStore, secret string, mode syncsrv.Mode) *Server {
+	s := &Server{svc: svc, store: st, secret: secret, syncMode: mode, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -48,6 +54,17 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/sprints", s.auth(s.handleListSprints))
 	s.mux.HandleFunc("POST /api/sprints", s.auth(s.handleCreateSprint))
 	s.mux.HandleFunc("GET /api/sprints/{id}", s.auth(s.handleGetSprint))
+
+	// Sync routes
+	s.mux.HandleFunc("GET /api/sync/heartbeat", s.syncAuth(s.handleSyncHeartbeat))
+	s.mux.HandleFunc("GET /api/sync/snapshot", s.syncAuth(s.handleSyncSnapshot))
+	s.mux.HandleFunc("GET /api/sync/stream", s.syncAuth(s.handleSyncStream))
+	s.mux.HandleFunc("GET /api/sync/secondaries", s.auth(s.handleListSecondaries))
+	s.mux.HandleFunc("POST /api/sync/secondaries", s.auth(s.handleAddSecondary))
+	s.mux.HandleFunc("DELETE /api/sync/secondaries/{id}", s.auth(s.handleRevokeSecondary))
+	s.mux.HandleFunc("GET /api/sync/secondaries/{id}/grants", s.auth(s.handleListGrants))
+	s.mux.HandleFunc("PUT /api/sync/grants/{secondary}/{project}", s.auth(s.handleGrantProject))
+	s.mux.HandleFunc("DELETE /api/sync/grants/{secondary}/{project}", s.auth(s.handleRevokeGrant))
 }
 
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
@@ -64,6 +81,29 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), ctxKeyUserID, userID))
+		next(w, r)
+	}
+}
+
+func (s *Server) syncAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.store == nil {
+			writeErr(w, http.StatusNotFound, "sync not configured")
+			return
+		}
+		bearer := r.Header.Get("Authorization")
+		token := strings.TrimPrefix(bearer, "Bearer ")
+		if token == "" || token == bearer {
+			writeErr(w, http.StatusUnauthorized, "missing token")
+			return
+		}
+		sec, err := s.store.GetSecondaryByTokenHash(syncsrv.SHA256Hex(token))
+		if err != nil || sec == nil {
+			writeErr(w, http.StatusUnauthorized, "invalid sync token")
+			return
+		}
+		_ = s.store.TouchSecondary(sec.ID)
+		r = r.WithContext(context.WithValue(r.Context(), ctxKeySecondaryID, sec.ID))
 		next(w, r)
 	}
 }

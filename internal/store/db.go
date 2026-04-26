@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS sync_secondaries (
     last_seen_at    TEXT,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_secondaries_token_hash ON sync_secondaries(token_hash);
 
 CREATE TABLE IF NOT EXISTS sync_grants (
     secondary_id TEXT NOT NULL REFERENCES sync_secondaries(id) ON DELETE CASCADE,

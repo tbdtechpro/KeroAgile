@@ -101,8 +101,20 @@ type Task struct {
 	PRNumber    *int      `json:"pr_number"`
 	PRMerged    bool      `json:"pr_merged"`
 	Labels      []string  `json:"labels"`
-	Blockers    []string  `json:"blockers"` // task IDs that block this task
-	Blocking    []string  `json:"blocking"` // task IDs this task blocks
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Blockers        []string       `json:"blockers"` // task IDs that block this task
+	Blocking        []string       `json:"blocking"` // task IDs this task blocks
+	BlockerDetails  []*TaskSummary `json:"blocker_details,omitempty"`
+	BlockingDetails []*TaskSummary `json:"blocking_details,omitempty"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+}
+
+// TaskSummary is a lightweight task representation used in search results
+// and blocker enrichment. It does not include body fields like description,
+// labels, or sprint.
+type TaskSummary struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	ProjectID string `json:"project_id"`
+	Status    Status `json:"status"`
 }

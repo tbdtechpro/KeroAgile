@@ -31,9 +31,11 @@ type App struct {
 	board   Board
 	detail  Detail
 
-	focus      panelFocus
-	form       *forms.TaskForm
-	sprintForm *forms.SprintForm
+	focus              panelFocus
+	form               *forms.TaskForm
+	sprintForm         *forms.SprintForm
+	blockerPicker      *forms.BlockerPicker
+	blockerPickerField string
 
 	projects         []*domain.Project
 	currentTasks     []*domain.Task
@@ -141,6 +143,19 @@ func (a App) tickPRPoll() tea.Cmd {
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// Picker overlay takes priority when open
+	if a.blockerPicker != nil {
+		switch msg.(type) {
+		case forms.BlockerPickedMsg, forms.BlockerPickerCancelledMsg:
+			// fall through to main switch so the picker gets dismissed
+		default:
+			newPicker, cmd := a.blockerPicker.Update(msg)
+			bp := newPicker.(forms.BlockerPicker)
+			a.blockerPicker = &bp
+			return a, cmd
+		}
+	}
 
 	if a.sprintForm != nil {
 		switch msg := msg.(type) {
@@ -287,6 +302,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prMergedDoneMsg:
 		a.setStatus(fmt.Sprintf("✓ %s auto-closed via merged PR", msg.taskID))
 		cmds = append(cmds, a.loadTasks(msg.projectID))
+
+	case forms.OpenBlockerPickerMsg:
+		picker := forms.NewBlockerPicker(a.svc, a.width, a.height)
+		a.blockerPicker = &picker
+		a.blockerPickerField = msg.Field
+		return a, picker.Init()
+
+	case forms.BlockerPickedMsg:
+		if a.form != nil && a.blockerPicker != nil {
+			updated := a.form.AppendToBlocker(a.blockerPickerField, msg.ID)
+			a.form = &updated
+		}
+		a.blockerPicker = nil
+		a.blockerPickerField = ""
+		return a, nil
+
+	case forms.BlockerPickerCancelledMsg:
+		a.blockerPicker = nil
+		a.blockerPickerField = ""
+		return a, nil
 
 	case addBlockerMsg:
 		pid := a.sidebar.SelectedProjectID()
@@ -567,7 +602,6 @@ func (a App) doCreateTask(msg forms.SavedMsg, projectID string) tea.Cmd {
 }
 
 func (a App) doUpdateTask(msg forms.SavedMsg, t *domain.Task) tea.Cmd {
-	// copy to avoid mutation of shared pointer
 	updated := *t
 	updated.Title = msg.Title
 	updated.Description = msg.Description
@@ -582,14 +616,44 @@ func (a App) doUpdateTask(msg forms.SavedMsg, t *domain.Task) tea.Cmd {
 	} else {
 		updated.AssigneeID = nil
 	}
-	// TODO(v0.2.0): msg.Blocks and msg.BlockedBy are not persisted here.
-	// Reconciling dep changes requires calling svc.AddDep/RemoveDep to diff
-	// old vs new sets. Tracked in docs/roadmap.md §2.2 blocker management.
+	taskID := t.ID
 	projectID := t.ProjectID
+	oldBlockers := append([]string(nil), t.Blockers...)
+	oldBlocking := append([]string(nil), t.Blocking...)
+	newBlockedBy := msg.BlockedBy
+	newBlocks := msg.Blocks
+
 	return func() tea.Msg {
 		if _, err := a.svc.UpdateTask(&updated); err != nil {
 			return statusNotifMsg{fmt.Sprintf("error: %v", err)}
 		}
+
+		// Reconcile blocked-by (tasks that block this task)
+		add, remove := diffBlockers(oldBlockers, newBlockedBy)
+		for _, id := range remove {
+			if err := a.svc.RemoveDep(id, taskID); err != nil {
+				return statusNotifMsg{fmt.Sprintf("error removing blocker %s: %v", id, err)}
+			}
+		}
+		for _, id := range add {
+			if err := a.svc.AddDep(id, taskID); err != nil {
+				return statusNotifMsg{fmt.Sprintf("error adding blocker %s: %v", id, err)}
+			}
+		}
+
+		// Reconcile blocks (tasks that this task blocks)
+		add, remove = diffBlockers(oldBlocking, newBlocks)
+		for _, id := range remove {
+			if err := a.svc.RemoveDep(taskID, id); err != nil {
+				return statusNotifMsg{fmt.Sprintf("error removing block %s: %v", id, err)}
+			}
+		}
+		for _, id := range add {
+			if err := a.svc.AddDep(taskID, id); err != nil {
+				return statusNotifMsg{fmt.Sprintf("error adding block %s: %v", id, err)}
+			}
+		}
+
 		return reloadTasksMsg{projectID}
 	}
 }
@@ -628,6 +692,30 @@ func (a App) doMarkPRMerged(id, projectID string) tea.Cmd {
 		}
 		return prMergedDoneMsg{taskID: id, projectID: projectID}
 	}
+}
+
+// diffBlockers computes which IDs to add and which to remove when reconciling
+// a blocker list. oldIDs is the current state; newIDs is the desired state.
+func diffBlockers(oldIDs, newIDs []string) (toAdd, toRemove []string) {
+	oldSet := make(map[string]bool, len(oldIDs))
+	for _, id := range oldIDs {
+		oldSet[id] = true
+	}
+	newSet := make(map[string]bool, len(newIDs))
+	for _, id := range newIDs {
+		newSet[id] = true
+	}
+	for id := range newSet {
+		if !oldSet[id] {
+			toAdd = append(toAdd, id)
+		}
+	}
+	for id := range oldSet {
+		if !newSet[id] {
+			toRemove = append(toRemove, id)
+		}
+	}
+	return
 }
 
 func (a App) refreshGit(t *domain.Task) tea.Cmd {
@@ -749,6 +837,10 @@ func (a App) View() string {
 		statusText = a.statusMsg
 	}
 	statusBar := styles.StatusBar.Width(a.width).Render(statusText)
+
+	if a.blockerPicker != nil {
+		return a.blockerPicker.View()
+	}
 
 	if a.sprintForm != nil {
 		return a.sprintForm.View()

@@ -185,6 +185,12 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if f.focus == fieldDesc {
 				break
 			}
+			if f.focus == fieldBlockedBy {
+				return f, func() tea.Msg { return OpenBlockerPickerMsg{Field: "blockedBy"} }
+			}
+			if f.focus == fieldBlocks {
+				return f, func() tea.Msg { return OpenBlockerPickerMsg{Field: "blocks"} }
+			}
 			if errStr := f.validate(); errStr != "" {
 				f.err = errStr
 				return f, nil
@@ -435,6 +441,28 @@ func (f TaskForm) fieldLabel(text string, active bool) string {
 		return lipgloss.NewStyle().Foreground(styles.CAccentLt).Bold(true).Render(text)
 	}
 	return styles.Muted.Render(text)
+}
+
+// AppendToBlocker appends id to the blocks or blockedBy text input.
+// field must be "blocks" or "blockedBy".
+func (f TaskForm) AppendToBlocker(field, id string) TaskForm {
+	switch field {
+	case "blockedBy":
+		existing := strings.TrimSpace(f.blockedByIn.Value())
+		if existing == "" {
+			f.blockedByIn.SetValue(id)
+		} else {
+			f.blockedByIn.SetValue(existing + ", " + id)
+		}
+	case "blocks":
+		existing := strings.TrimSpace(f.blocksInput.Value())
+		if existing == "" {
+			f.blocksInput.SetValue(id)
+		} else {
+			f.blocksInput.SetValue(existing + ", " + id)
+		}
+	}
+	return f
 }
 
 // resolveSprintID resolves the sprint input string to a sprint ID.

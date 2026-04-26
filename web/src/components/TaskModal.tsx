@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import type { Priority, Status, Task } from '../api/types'
+import { useEffect, useRef, useState } from 'react'
+import type { Priority, Status, Task, TaskSummary } from '../api/types'
 import type { CreateTaskInput, UpdateTaskInput } from '../api/types'
-import { useCreateTask, useUpdateTask, useUsers, useSprints } from '../api/queries'
+import { useCreateTask, useUpdateTask, useUsers, useSprints, useAddBlocker, useRemoveBlocker } from '../api/queries'
+import { api } from '../api/client'
 
 const PRIORITIES: Priority[] = ['low', 'medium', 'high', 'critical']
 const STATUSES: Status[] = ['backlog', 'todo', 'in_progress', 'review', 'done']
@@ -40,6 +41,15 @@ export default function TaskModal({
   const [labelsRaw, setLabelsRaw] = useState(task?.labels?.join(', ') ?? '')
   const [sprintId, setSprintId] = useState(task?.sprint_id != null ? String(task.sprint_id) : '')
   const [error, setError] = useState('')
+  const [blockerQuery, setBlockerQuery] = useState('')
+  const [blockerResults, setBlockerResults] = useState<TaskSummary[]>([])
+  const [selectedBlockers, setSelectedBlockers] = useState<TaskSummary[]>(
+    task?.blocker_details?.filter((b): b is TaskSummary => b != null) ?? []
+  )
+  const [showDropdown, setShowDropdown] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const addBlocker = useAddBlocker()
+  const removeBlocker = useRemoveBlocker()
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -48,6 +58,43 @@ export default function TaskModal({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (!blockerQuery.trim()) {
+      setBlockerResults([])
+      setShowDropdown(false)
+      return
+    }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const resp = await api.searchTasks(blockerQuery, projectId)
+        const results = (resp.tasks ?? []).filter(ts => ts.id !== task?.id)
+        setBlockerResults(results)
+        setShowDropdown(results.length > 0)
+      } catch {
+        // ignore search errors
+      }
+    }, 300)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [blockerQuery, projectId, task?.id])
+
+  function selectBlocker(ts: TaskSummary) {
+    setSelectedBlockers(prev => [...prev, ts])
+    setBlockerQuery('')
+    setBlockerResults([])
+    setShowDropdown(false)
+    if (task) {
+      addBlocker.mutate({ taskId: task.id, blockerId: ts.id })
+    }
+  }
+
+  function deselectBlocker(ts: TaskSummary) {
+    setSelectedBlockers(prev => prev.filter(b => b.id !== ts.id))
+    if (task) {
+      removeBlocker.mutate({ taskId: task.id, blockerId: ts.id })
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -213,6 +260,78 @@ export default function TaskModal({
               style={fieldStyle}
             />
           </div>
+
+          {/* Blocked by — edit mode only */}
+          {isEdit && (
+            <div>
+              <label className="block text-xs mb-1" style={{ color: 'var(--ka-muted)' }}>
+                Blocked by
+              </label>
+              {/* Chips */}
+              <div className="flex flex-wrap gap-1 mb-1">
+                {selectedBlockers.map(b => (
+                  <span
+                    key={b.id}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded"
+                    style={{
+                      background: b.project_id !== projectId ? '#1e3a5f' : '#7f1d1d',
+                      color: b.project_id !== projectId ? '#93c5fd' : 'var(--ka-red)',
+                    }}
+                  >
+                    {b.project_id !== projectId && <span>↗</span>}
+                    {b.id} {b.title}
+                    <button
+                      type="button"
+                      onClick={() => deselectBlocker(b)}
+                      className="ml-1 opacity-60 hover:opacity-100"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              {/* Search input */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search tasks to add as blocker…"
+                  value={blockerQuery}
+                  onChange={e => setBlockerQuery(e.target.value)}
+                  onFocus={() => blockerResults.length > 0 && setShowDropdown(true)}
+                  onBlur={() => setShowDropdown(false)}
+                  className="w-full text-xs px-2 py-1 rounded border"
+                  style={{
+                    background: 'var(--ka-inset)',
+                    borderColor: '#1e293b',
+                    color: 'var(--ka-text)',
+                    outline: 'none',
+                  }}
+                />
+                {showDropdown && (
+                  <div
+                    className="absolute z-10 w-full mt-1 rounded border shadow-lg"
+                    style={{ background: 'var(--ka-panel)', borderColor: '#1e293b', maxHeight: 200, overflowY: 'auto' }}
+                  >
+                    {blockerResults.filter(ts => !selectedBlockers.some(b => b.id === ts.id)).map(ts => (
+                      <button
+                        key={ts.id}
+                        type="button"
+                        onMouseDown={() => selectBlocker(ts)}
+                        className="w-full text-left text-xs px-3 py-1.5 hover:bg-blue-900"
+                        style={{ color: 'var(--ka-text)' }}
+                      >
+                        {ts.project_id !== projectId && (
+                          <span className="text-blue-400 mr-1">[{ts.project_id}]</span>
+                        )}
+                        <span className="font-mono mr-1">{ts.id}</span>
+                        {ts.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {error && (
             <p className="text-xs" style={{ color: 'var(--ka-red)' }}>{error}</p>

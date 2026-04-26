@@ -59,7 +59,26 @@ func (s *Store) GetTask(id string) (*domain.Task, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
 	}
-	return t, err
+	if err != nil {
+		return nil, err
+	}
+
+	blockers, blocking, err := s.GetTaskDeps(id)
+	if err != nil {
+		return nil, err
+	}
+	t.Blockers = blockers
+	t.Blocking = blocking
+
+	t.BlockerDetails, err = s.fetchSummaries(blockers)
+	if err != nil {
+		return nil, err
+	}
+	t.BlockingDetails, err = s.fetchSummaries(blocking)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
 }
 
 func (s *Store) ListTasks(projectID string, f domain.TaskFilters) ([]*domain.Task, error) {
@@ -171,6 +190,81 @@ func (s *Store) RemoveDep(blockerID, blockedID string) error {
 		blockerID, blockedID,
 	)
 	return err
+}
+
+func (s *Store) SearchTasks(q string, limit int) ([]*domain.TaskSummary, error) {
+	return s.SearchTasksWithHint(q, limit, "")
+}
+
+func (s *Store) SearchTasksWithHint(q string, limit int, hintProjectID string) ([]*domain.TaskSummary, error) {
+	like := "%" + q + "%"
+	rows, err := s.db.Query(
+		`SELECT id, title, project_id, status FROM tasks
+		 WHERE id LIKE ? OR title LIKE ?
+		 ORDER BY (project_id = ?) DESC, rowid ASC
+		 LIMIT ?`,
+		like, like, hintProjectID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*domain.TaskSummary
+	for rows.Next() {
+		var ts domain.TaskSummary
+		var status string
+		if err := rows.Scan(&ts.ID, &ts.Title, &ts.ProjectID, &status); err != nil {
+			return nil, err
+		}
+		ts.Status = domain.Status(status)
+		out = append(out, &ts)
+	}
+	return out, rows.Err()
+}
+
+// fetchSummaries returns a TaskSummary for each id in ids, preserving input order.
+// IDs not found in the database are silently skipped.
+func (s *Store) fetchSummaries(ids []string) ([]*domain.TaskSummary, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.Query(
+		`SELECT id, title, project_id, status FROM tasks WHERE id IN (`+placeholders+`) ORDER BY rowid ASC`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byID := make(map[string]*domain.TaskSummary)
+	for rows.Next() {
+		var ts domain.TaskSummary
+		var status string
+		if err := rows.Scan(&ts.ID, &ts.Title, &ts.ProjectID, &status); err != nil {
+			return nil, err
+		}
+		ts.Status = domain.Status(status)
+		byID[ts.ID] = &ts
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]*domain.TaskSummary, 0, len(ids))
+	for _, id := range ids {
+		if ts, ok := byID[id]; ok {
+			out = append(out, ts)
+		}
+	}
+	return out, nil
 }
 
 func scanTask(r rowScanner) (*domain.Task, error) {

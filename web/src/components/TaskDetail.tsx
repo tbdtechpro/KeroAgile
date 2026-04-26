@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Task } from '../api/types'
-import { useDeleteTask } from '../api/queries'
+import { useDeleteTask, useRemoveBlocker } from '../api/queries'
 
 const PRIORITY_COLORS: Record<string, string> = {
   low: 'var(--ka-muted)',
@@ -38,7 +38,12 @@ export default function TaskDetail({
   onToast: (msg: string, type: 'success' | 'error') => void
 }) {
   const deleteTask = useDeleteTask()
+  const removeBlocker = useRemoveBlocker()
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  function handleBlockerClick(_blockerProjectId: string, _taskId: string) {
+    onClose()
+  }
 
   async function handleDelete() {
     if (!confirmDelete) {
@@ -165,15 +170,80 @@ export default function TaskDetail({
         {task.blockers && task.blockers.length > 0 && (
           <Field label="Blocked by">
             <div className="flex flex-wrap gap-1">
-              {task.blockers.map(b => (
-                <span
-                  key={b}
-                  className="text-xs px-2 py-0.5 rounded"
-                  style={{ background: '#7f1d1d', color: 'var(--ka-red)' }}
-                >
-                  {b}
-                </span>
-              ))}
+              {(task.blocker_details && task.blocker_details.length > 0
+                ? task.blocker_details
+                : task.blockers.map(id => ({ id, title: '', project_id: task.project_id, status: task.status }))
+              ).map(b => {
+                const isCross = b.project_id !== task.project_id
+                return (
+                  <span
+                    key={b.id}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded cursor-pointer"
+                    style={{
+                      background: isCross ? '#1e3a5f' : '#7f1d1d',
+                      color: isCross ? '#93c5fd' : 'var(--ka-red)',
+                    }}
+                    onClick={() => handleBlockerClick(b.project_id || task.project_id, b.id)}
+                    title={b.title || b.id}
+                  >
+                    {isCross && <span>↗</span>}
+                    <span>{b.id}</span>
+                    {b.title && <span className="opacity-75">{b.title.length > 24 ? b.title.slice(0, 21) + '…' : b.title}</span>}
+                    {isCross && (
+                      <span
+                        className="text-xs px-1 rounded"
+                        style={{ background: 'rgba(255,255,255,0.1)', fontSize: '0.65rem' }}
+                      >
+                        {b.project_id}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation()
+                        removeBlocker.mutate({ taskId: task.id, blockerId: b.id })
+                      }}
+                      className="ml-1 opacity-50 hover:opacity-100"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )
+              })}
+            </div>
+          </Field>
+        )}
+
+        {task.blocking_details && task.blocking_details.length > 0 && (
+          <Field label="Blocking">
+            <div className="flex flex-wrap gap-1">
+              {task.blocking_details.map(b => {
+                const isCross = b.project_id !== task.project_id
+                return (
+                  <span
+                    key={b.id}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded cursor-pointer"
+                    style={{
+                      background: isCross ? '#1e3a5f' : '#064e3b',
+                      color: isCross ? '#93c5fd' : '#6ee7b7',
+                    }}
+                    onClick={() => handleBlockerClick(b.project_id || task.project_id, b.id)}
+                    title={b.title || b.id}
+                  >
+                    <span>►</span>
+                    <span>{b.id}</span>
+                    {b.title && <span className="opacity-75">{b.title.length > 24 ? b.title.slice(0, 21) + '…' : b.title}</span>}
+                    {isCross && (
+                      <span
+                        className="text-xs px-1 rounded"
+                        style={{ background: 'rgba(255,255,255,0.1)', fontSize: '0.65rem' }}
+                      >
+                        {b.project_id}
+                      </span>
+                    )}
+                  </span>
+                )
+              })}
             </div>
           </Field>
         )}

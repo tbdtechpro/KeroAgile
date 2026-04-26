@@ -1,4 +1,4 @@
-import type { Task, Project, User, Sprint, SprintSummary, CreateTaskInput, UpdateTaskInput, Secondary } from './types'
+import type { Task, TaskSummary, Project, User, Sprint, SprintSummary, CreateTaskInput, UpdateTaskInput, Secondary } from './types'
 
 const TOKEN_KEY = 'keroagile_token'
 
@@ -88,6 +88,20 @@ export const api = {
   },
   deleteTask(id: string): Promise<void> {
     return request('DELETE', `/api/tasks/${id}`)
+  },
+
+  searchTasks(q: string, hintProjectId?: string): Promise<{ tasks: TaskSummary[] }> {
+    const qs = new URLSearchParams({ q, limit: '20' })
+    if (hintProjectId) qs.set('hint_project_id', hintProjectId)
+    return request('GET', `/api/search/tasks?${qs}`)
+  },
+
+  addBlocker(taskId: string, blockerId: string): Promise<{ status: string }> {
+    return request('POST', `/api/tasks/${taskId}/blockers`, { blocker_id: blockerId })
+  },
+
+  removeBlocker(taskId: string, blockerId: string): Promise<{ status: string }> {
+    return request('DELETE', `/api/tasks/${taskId}/blockers/${blockerId}`)
   },
 
   // Users

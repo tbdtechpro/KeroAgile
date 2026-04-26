@@ -24,6 +24,8 @@ type Store interface {
 	GetTaskDeps(taskID string) (blockers, blocking []string, err error)
 	AddDep(blockerID, blockedID string) error
 	RemoveDep(blockerID, blockedID string) error
+	SearchTasks(q string, limit int) ([]*TaskSummary, error)
+	SearchTasksWithHint(q string, limit int, hintProjectID string) ([]*TaskSummary, error)
 	NextTaskSeq(projectID string) (int, error)
 
 	// Sprints

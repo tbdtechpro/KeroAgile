@@ -226,6 +226,14 @@ func (s *Service) RemoveDep(blockerID, blockedID string) error {
 	return s.store.RemoveDep(blockerID, blockedID)
 }
 
+func (s *Service) SearchTasks(q string, limit int) ([]*TaskSummary, error) {
+	return s.store.SearchTasks(q, limit)
+}
+
+func (s *Service) SearchTasksWithHint(q string, limit int, hintProjectID string) ([]*TaskSummary, error) {
+	return s.store.SearchTasksWithHint(q, limit, hintProjectID)
+}
+
 // AssignTaskToSprint sets or clears the sprint assignment for a task.
 // sprintID == nil clears the assignment.
 func (s *Service) AssignTaskToSprint(taskID string, sprintID *int64) (*Task, error) {

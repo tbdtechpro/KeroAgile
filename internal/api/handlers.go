@@ -339,6 +339,68 @@ func (s *Server) maybeSyncProxy(w http.ResponseWriter, r *http.Request, projectI
 	return true
 }
 
+func (s *Server) handleSearchTasks(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	limitStr := r.URL.Query().Get("limit")
+	limit := 20
+	if n, err := strconv.Atoi(limitStr); err == nil && n > 0 && n <= 100 {
+		limit = n
+	}
+	hint := r.URL.Query().Get("hint_project_id")
+
+	results, err := s.svc.SearchTasksWithHint(q, limit, hint)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if results == nil {
+		results = []*domain.TaskSummary{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": results})
+}
+
+func (s *Server) handleAddBlocker(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	if _, err := s.svc.GetTask(taskID); err != nil {
+		writeErr(w, http.StatusNotFound, "task not found")
+		return
+	}
+	var req struct {
+		BlockerID string `json:"blocker_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.BlockerID == "" {
+		writeErr(w, http.StatusBadRequest, "blocker_id is required")
+		return
+	}
+	if _, err := s.svc.GetTask(req.BlockerID); err != nil {
+		writeErr(w, http.StatusNotFound, "blocker task not found")
+		return
+	}
+	if err := s.svc.AddDep(req.BlockerID, taskID); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleRemoveBlocker(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	if _, err := s.svc.GetTask(taskID); err != nil {
+		writeErr(w, http.StatusNotFound, "task not found")
+		return
+	}
+	blockerID := r.PathValue("blocker_id")
+	if err := s.svc.RemoveDep(blockerID, taskID); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // logChange writes a change_log event for a completed mutation. Best-effort: errors are ignored.
 func (s *Server) logChange(r *http.Request, projectID, eventType string, payload any) {
 	if s.store == nil {

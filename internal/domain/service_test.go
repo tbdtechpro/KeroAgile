@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -94,6 +95,26 @@ func (m *mockStore) AddDep(blockerID, blockedID string) error {
 	return nil
 }
 func (m *mockStore) RemoveDep(blockerID, blockedID string) error { return nil }
+func (m *mockStore) SearchTasks(q string, limit int) ([]*domain.TaskSummary, error) {
+	return m.SearchTasksWithHint(q, limit, "")
+}
+func (m *mockStore) SearchTasksWithHint(q string, limit int, hintProjectID string) ([]*domain.TaskSummary, error) {
+	var out []*domain.TaskSummary
+	for _, t := range m.tasks {
+		if strings.Contains(t.ID, q) || strings.Contains(t.Title, q) {
+			out = append(out, &domain.TaskSummary{
+				ID:        t.ID,
+				Title:     t.Title,
+				ProjectID: t.ProjectID,
+				Status:    t.Status,
+			})
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
 func (m *mockStore) NextTaskSeq(projectID string) (int, error) {
 	m.seqs[projectID]++
 	return m.seqs[projectID], nil
@@ -211,4 +232,35 @@ func TestAssignTaskToSprint_NotFound(t *testing.T) {
 	svc := domain.NewService(newMock())
 	_, err := svc.AssignTaskToSprint("KA-999", nil)
 	require.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestSearchTasksPassThrough(t *testing.T) {
+	svc := domain.NewService(newMock())
+	require.NoError(t, svc.CreateProject("KA", "KeroAgile", ""))
+	require.NoError(t, svc.CreateProject("KCP", "KeroCareer", ""))
+	_, err := svc.CreateTask("Add JWT auth", "", "KA", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+	_, err = svc.CreateTask("Career DB migration", "", "KCP", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+
+	results, err := svc.SearchTasks("JWT", 10)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "KA", results[0].ProjectID)
+}
+
+func TestCrossProjectDep(t *testing.T) {
+	svc := domain.NewService(newMock())
+	require.NoError(t, svc.CreateProject("KA", "KeroAgile", ""))
+	require.NoError(t, svc.CreateProject("KCP", "KeroCareer", ""))
+	ka, err := svc.CreateTask("KA task", "", "KA", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+	kcp, err := svc.CreateTask("KCP task", "", "KCP", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.AddDep(kcp.ID, ka.ID)) // kcp.ID blocks ka.ID
+
+	t2, err := svc.GetTask(ka.ID)
+	require.NoError(t, err)
+	assert.Contains(t, t2.Blockers, kcp.ID)
 }

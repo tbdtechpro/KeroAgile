@@ -216,6 +216,45 @@ var taskDeleteCmd = &cobra.Command{
 	},
 }
 
+var taskBlockCmd = &cobra.Command{
+	Use:   "block <task-id> <blocker-id>",
+	Short: "Mark a task as blocked by another task",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		taskID, blockerID := args[0], args[1]
+		if err := svc.AddDep(blockerID, taskID); err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				exitNotFound(blockerID)
+			}
+			return err
+		}
+		if jsonFlag {
+			printJSON(map[string]string{"blocked": taskID, "blocked_by": blockerID})
+		} else {
+			fmt.Printf("%s is now blocked by %s\n", taskID, blockerID)
+		}
+		return nil
+	},
+}
+
+var taskUnblockCmd = &cobra.Command{
+	Use:   "unblock <task-id> <blocker-id>",
+	Short: "Remove a blocker from a task",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		taskID, blockerID := args[0], args[1]
+		if err := svc.RemoveDep(blockerID, taskID); err != nil {
+			return err
+		}
+		if jsonFlag {
+			printJSON(map[string]string{"unblocked": taskID, "removed_blocker": blockerID})
+		} else {
+			fmt.Printf("%s is no longer blocked by %s\n", taskID, blockerID)
+		}
+		return nil
+	},
+}
+
 func init() {
 	taskAddCmd.Flags().String("project", "", "project ID")
 	taskAddCmd.Flags().String("assignee", "", "assignee user ID")
@@ -230,5 +269,6 @@ func init() {
 	taskListCmd.Flags().String("assignee", "", "filter by assignee")
 
 	taskCmd.AddCommand(taskAddCmd, taskListCmd, taskGetCmd, taskMoveCmd,
-		taskLinkBranchCmd, taskLinkPRCmd, taskDeleteCmd)
+		taskLinkBranchCmd, taskLinkPRCmd, taskDeleteCmd,
+		taskBlockCmd, taskUnblockCmd)
 }

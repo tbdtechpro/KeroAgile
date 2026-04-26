@@ -114,6 +114,66 @@ func TestSearchTasksWithHintOrdering(t *testing.T) {
 	assert.Equal(t, kcpID, results[0].ID, "hinted project should sort first")
 }
 
+func TestGetTaskEnrichesBlockerDetails(t *testing.T) {
+	s := testStore(t)
+	require.NoError(t, s.CreateProject(&domain.Project{ID: "KA", Name: "KeroAgile"}))
+	require.NoError(t, s.CreateProject(&domain.Project{ID: "KCP", Name: "KeroCareer"}))
+
+	seq1, _ := s.NextTaskSeq("KA")
+	kaID := fmt.Sprintf("KA-%03d", seq1)
+	require.NoError(t, s.CreateTask(&domain.Task{
+		ID: kaID, ProjectID: "KA", Title: "Implement handler",
+		Status: domain.StatusInProgress, Priority: domain.PriorityHigh,
+	}))
+
+	seq2, _ := s.NextTaskSeq("KCP")
+	kcpID := fmt.Sprintf("KCP-%03d", seq2)
+	require.NoError(t, s.CreateTask(&domain.Task{
+		ID: kcpID, ProjectID: "KCP", Title: "Career DB migration",
+		Status: domain.StatusTodo, Priority: domain.PriorityMedium,
+	}))
+
+	require.NoError(t, s.AddDep(kcpID, kaID)) // kcpID blocks kaID
+
+	task, err := s.GetTask(kaID)
+	require.NoError(t, err)
+	assert.Contains(t, task.Blockers, kcpID)
+	require.Len(t, task.BlockerDetails, 1)
+	assert.Equal(t, kcpID, task.BlockerDetails[0].ID)
+	assert.Equal(t, "Career DB migration", task.BlockerDetails[0].Title)
+	assert.Equal(t, "KCP", task.BlockerDetails[0].ProjectID)
+	assert.Equal(t, domain.StatusTodo, task.BlockerDetails[0].Status)
+	assert.Empty(t, task.BlockingDetails)
+}
+
+func TestGetTaskBlockingDetails(t *testing.T) {
+	s := testStore(t)
+	require.NoError(t, s.CreateProject(&domain.Project{ID: "KA", Name: "KeroAgile"}))
+
+	seq1, _ := s.NextTaskSeq("KA")
+	t1ID := fmt.Sprintf("KA-%03d", seq1)
+	seq2, _ := s.NextTaskSeq("KA")
+	t2ID := fmt.Sprintf("KA-%03d", seq2)
+
+	require.NoError(t, s.CreateTask(&domain.Task{
+		ID: t1ID, ProjectID: "KA", Title: "Blocker task",
+		Status: domain.StatusInProgress, Priority: domain.PriorityHigh,
+	}))
+	require.NoError(t, s.CreateTask(&domain.Task{
+		ID: t2ID, ProjectID: "KA", Title: "Blocked task",
+		Status: domain.StatusBacklog, Priority: domain.PriorityMedium,
+	}))
+
+	require.NoError(t, s.AddDep(t1ID, t2ID)) // t1ID blocks t2ID
+
+	task, err := s.GetTask(t1ID)
+	require.NoError(t, err)
+	assert.Empty(t, task.Blockers)
+	require.Len(t, task.BlockingDetails, 1)
+	assert.Equal(t, t2ID, task.BlockingDetails[0].ID)
+	assert.Equal(t, "Blocked task", task.BlockingDetails[0].Title)
+}
+
 func TestUserSyncOriginColumn(t *testing.T) {
 	s := testStore(t)
 	err := s.CreateUser(&domain.User{

@@ -49,20 +49,24 @@ SVG so it can inherit theme accent colours.
 
 Add 6-theme support (each with light + dark = 12 colour sets):
 
-| # | Name | Font | Character |
-|---|------|------|-----------|
-| 1 | Default | (existing TUI palette) | Warm greens/greys matching the TUI |
-| 2 | KeroCareer | Lora | Warm earthy — KCP's "Default" theme |
-| 3 | Corporate | Source Sans 3 | Professional blue |
-| 4 | Bonita | Lora | Soft purple on white |
-| 5 | Muy Bonita | Source Sans 3 | Deep crimson on pink |
-| 6 | Geeky | Source Sans 3 | Dracula dark / Alucard-adjacent light |
+**Colour tokens only — no font switching.** KeroAgile uses its own typeface
+independently of themes. The Lora/Source Sans 3 pairing is specific to KeroCareer's
+editorial identity and does not transfer.
+
+| # | Name | Character |
+|---|------|-----------|
+| 1 | Default | Warm greens/greys — mirrors the existing TUI palette |
+| 2 | KeroCareer | Warm earthy — KCP's "Default" theme |
+| 3 | Corporate | Professional blue |
+| 4 | Bonita | Soft purple on white |
+| 5 | Muy Bonita | Deep crimson on pink |
+| 6 | Geeky | Dracula dark / Alucard-adjacent light |
 
 **Working reference:** `KeroCareerPOC/ui_tests/app-layout_2026-04-20/index.html` (vanilla
 JS) + `app-layout_reference.md`. The implementation pattern: a `THEME_DEFS` object with
 17 named tokens per colour set; `applyTheme()` writes them as CSS custom properties to
 `document.documentElement`. Port to React via a `ThemeProvider` context + `useTheme()`
-hook.
+hook. **Omit the font-switching logic** from the KCP reference.
 
 **Token source-of-truth for themes 2–6:**
 `KeroCareerPOC/draft_assets/design_tokens/theme/theme-tokens.csv`
@@ -71,9 +75,6 @@ hook.
 (`internal/tui/styles/`).
 
 **LocalStorage key:** `kero-prefs` — matching KCP for consistency.
-
-**Open question:** adopt Lora/Source Sans 3 font pairing (metric-compatible, no layout
-shift on theme switch), or pick KeroAgile-specific fonts?
 
 ---
 
@@ -156,17 +157,20 @@ decomposition, gentle reminders rather than hard deadlines. Blocked on KA-034.
 
 This unblocks KA-041 (KeroCalendar integration) and KA-042 (all-project planning view).
 
-### 6.2 All-project planning view — [KA-042](../docs/roadmap.md)
+### 6.2 All-project daily standup assistant — [KA-042](../docs/roadmap.md)
 
-An aggregated view across every project:
+A daily standup flow across all projects:
 
-1. **Cross-project standup** — what's in-progress across all projects, what's blocked,
-   what shipped recently — as a single daily summary
-2. **Claude-assisted backlog triage** — Claude reviews backlog items across all projects
-   and recommends next items to work or flags tasks awaiting user action
+1. Pull open tasks assigned to the current user from every project (1–3 per project,
+   ordered by task sequence)
+2. Present as a simple list: "across your projects, here are your open tasks"
+3. User declares intent: "I'll work on KA-031, KCP-012, and KA-035 today"
+4. Claude moves the declared tasks to `todo` or `in_progress`
 
-Exact UI TBD: dedicated page, a "morning briefing" MCP tool, or both.
-Blocked on KA-035 (cross-project blockers UI) so dependency chains are visible.
+User-driven — Claude surfaces candidates, the user chooses, Claude executes status moves.
+No autonomous prioritisation. Could be an MCP tool ("morning briefing"), a dedicated web
+page, or both. Blocked on KA-035 so the view can also show which tasks are currently
+blocked across projects.
 
 ---
 
@@ -210,9 +214,14 @@ When a KeroAgile task is tagged as a research task, Claude queries content in
 KeroOle/KeroBooks and adds links to relevant ebook MD files in the task description.
 Surfaces reading material without manual cross-referencing.
 
-**External prereq:** KeroOle and/or KeroBooks do not exist yet. Re-evaluate when one
-has an MVP with a queryable content index. May be token-intensive for large ebook indices
-— worth benchmarking once the integration partner exists.
+**KeroOle** exists at `/home/matt/github/KeroOle`. It currently downloads content from
+O'Reilly Learning, logs it to a database, creates exports in multiple formats, and
+provides AI-ready context. Non-O'Reilly ebook parsing is planned. **KeroBooks** is a
+planned fork with the DB/export/context pipeline but without the O'Reilly-specific
+grey-area features — the clean public version.
+
+This task should wait until KeroOle's non-O'Reilly parsing is mature and the export API
+is settled. May be token-intensive for large ebook indices — benchmark then.
 
 ---
 

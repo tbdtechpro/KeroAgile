@@ -139,6 +139,8 @@ Press `enter` on a project in the sidebar to open its sprint list. Select a spri
 
 ### Blocker workflow
 
+![Blocker navigation](docs/gifs/blockers.gif)
+
 Press `b` on a selected task to open the blocker input. Type the blocking task's ID and press `enter`. The blocked task shows a red `⚠` prefix in the board. Press `→` on any blocked task (board or detail panel) to jump directly to the blocker task.
 
 Tasks that are `done` are automatically removed from all blocker lists — the `⚠` clears as soon as the blocking task is completed, with no manual cleanup required.

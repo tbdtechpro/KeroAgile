@@ -25,11 +25,15 @@ Sleep 0.5
 Enter
 Sleep 1.0
 
-# Sidebar now shows KCP's sprint list — navigate to Phase 1C
+# Sidebar now shows KCP's sprint list — navigate to Phase 1C (5th item, index 4)
 Down
-Sleep 0.4
+Sleep 0.3
 Down
-Sleep 0.4
+Sleep 0.3
+Down
+Sleep 0.3
+Down
+Sleep 0.3
 Enter
 Sleep 1.0
 
@@ -37,7 +41,7 @@ Sleep 1.0
 Tab
 Sleep 0.5
 
-Down@300ms 4
+Down@300ms 3
 Sleep 0.6
 
 # Tab to detail to see task info

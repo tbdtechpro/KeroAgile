@@ -19,27 +19,33 @@ Type "./KeroAgile"
 Enter
 Sleep 1.8
 
+# Sidebar has focus by default — Tab to board panel
+Tab
+Sleep 0.5
+
 # Navigate down through backlog tasks
-Down@350ms 5
+Down@300ms 4
 Sleep 0.8
 
 # Tab: board → detail panel
 Tab
-Sleep 0.7
+Sleep 0.8
 
 # Tab: detail → sidebar
 Tab
-Sleep 0.7
+Sleep 0.6
 
 # Tab: sidebar → board
 Tab
-Sleep 0.5
-
-# Move up then back down
-Up@280ms 3
 Sleep 0.4
-Down@280ms 3
-Sleep 1.2
+
+# Toggle Done section open
+Type "z"
+Sleep 1.6
+
+# Collapse Done section again
+Type "z"
+Sleep 0.8
 
 # Quit
 Type "q"

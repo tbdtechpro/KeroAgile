@@ -48,19 +48,17 @@ Sleep 0.3
 Type "3"
 Sleep 0.4
 
-# Tab through status, labels, sprint, blocks, blocked-by
+# Tab through status and labels
 Tab
 Sleep 0.2
 Tab
 Sleep 0.2
-Tab
-Sleep 0.2
-Tab
-Sleep 0.2
+
+# Tab to sprint — save from here (Enter on a non-blocker field saves the form)
 Tab
 Sleep 0.3
 
-# Save with Enter
+# Save
 Enter
 Sleep 1.8
 

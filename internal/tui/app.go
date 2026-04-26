@@ -821,9 +821,13 @@ func (a App) View() string {
 		}
 	}
 
+	projectPill := lipgloss.NewStyle().
+		Foreground(styles.CMuted).
+		Padding(0, 1).
+		Render(project)
+	purpleSep := lipgloss.NewStyle().Background(styles.CAccent).Render(" ")
 	header := styles.Header.Width(a.width).Render(
-		styles.Logo.Render("⬡ KeroAgile") + "  " +
-			styles.Muted.Render(project),
+		styles.Logo.Render("⬡ KeroAgile") + purpleSep + projectPill,
 	)
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top,

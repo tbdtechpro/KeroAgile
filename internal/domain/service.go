@@ -142,6 +142,10 @@ func (s *Service) DeleteTask(id string) error {
 	return s.store.DeleteTask(id)
 }
 
+func (s *Service) TaskByBranch(branch string) (*Task, error) {
+	return s.store.TaskByBranch(branch)
+}
+
 func (s *Service) LinkBranch(taskID, branch string) error {
 	t, err := s.store.GetTask(taskID)
 	if err != nil {

@@ -236,6 +236,22 @@ func TestAssignTaskToSprint(t *testing.T) {
 	assert.Nil(t, cleared.SprintID)
 }
 
+func TestServiceTaskByBranch(t *testing.T) {
+	svc := domain.NewService(newMock())
+	require.NoError(t, svc.CreateProject("KA", "KeroAgile", ""))
+
+	task, err := svc.CreateTask("Fix login", "", "KA", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+	require.NoError(t, svc.LinkBranch(task.ID, "feature/fix-login"))
+
+	got, err := svc.TaskByBranch("feature/fix-login")
+	require.NoError(t, err)
+	assert.Equal(t, task.ID, got.ID)
+
+	_, err = svc.TaskByBranch("feature/no-such")
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
 func TestAssignTaskToSprint_NotFound(t *testing.T) {
 	svc := domain.NewService(newMock())
 	_, err := svc.AssignTaskToSprint("KA-999", nil)

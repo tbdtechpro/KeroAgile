@@ -75,7 +75,7 @@ export function useAddBlocker() {
       api.addBlocker(taskId, blockerId),
     onSuccess: (_data, { taskId }) => {
       qc.invalidateQueries({ queryKey: ['tasks'] })
-      qc.invalidateQueries({ queryKey: ['task', taskId] })
+      qc.invalidateQueries({ queryKey: ['tasks', taskId] })
     },
   })
 }
@@ -87,7 +87,7 @@ export function useRemoveBlocker() {
       api.removeBlocker(taskId, blockerId),
     onSuccess: (_data, { taskId }) => {
       qc.invalidateQueries({ queryKey: ['tasks'] })
-      qc.invalidateQueries({ queryKey: ['task', taskId] })
+      qc.invalidateQueries({ queryKey: ['tasks', taskId] })
     },
   })
 }

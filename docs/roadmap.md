@@ -334,11 +334,26 @@ KeroAgile mcp --remote http://homelab:7432  # proxy to API server (Phase 3.3)
 
 The `--remote` flag lets a local Claude Code instance talk to a KeroAgile server on the home network — no SQLite file needed on the user's machine.
 
+### 4.1a Auto-status sync via Stop hook ✓ Shipped
+
+`KeroAgile sync-status` is a CLI command that reads the current git branch, finds the linked task, queries `gh pr view` for that branch, and applies state-machine transitions:
+
+- Branch has open PR → task moves to `review`, PR number linked
+- Branch has merged PR → task moves to `done` (`PRMerged=true`), PR number linked
+- No PR, or PR closed without merge → no change
+- Task already `done` → no change
+
+A project-level Claude Code **Stop hook** (`.claude/settings.json`) runs `KeroAgile sync-status --quiet` after every Claude turn, making transitions deterministic without requiring Claude to explicitly call `move_task`.
+
+**Follow-ups not yet done:**
+- `link_pr` MCP tool (currently PR linking is CLI-only; `sync-status` handles it automatically but Claude can't do it mid-conversation)
+- `in_progress` transition on first branch push (currently only `→ review` on PR open and `→ done` on merge are automated)
+
 ### 4.2 Claude Code skills
 
 Skills that teach Claude when and how to use KeroAgile naturally during development work:
 
-- **`keroagile-update`** — when Claude finishes a task, auto-finds the matching KeroAgile task by branch name, moves it to `done`, and links the PR number
+- **`keroagile-update`** — when Claude finishes a task, delegates to `KeroAgile sync-status` and reports what changed; falls back to a manual `move_task` call if the user provides a hint via `$ARGUMENTS`
 - **`keroagile-standup`** — summarises in-progress tasks for the current project with assignees and blockers; useful as a morning context-setter
 - **`keroagile-plan`** — reads the backlog and suggests sprint composition based on priority and story points
 

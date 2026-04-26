@@ -69,17 +69,15 @@ export default function TaskModal({
     debounceRef.current = setTimeout(async () => {
       try {
         const resp = await api.searchTasks(blockerQuery, projectId)
-        const filtered = (resp.tasks ?? []).filter(
-          ts => !selectedBlockers.some(b => b.id === ts.id) && ts.id !== task?.id
-        )
-        setBlockerResults(filtered)
-        setShowDropdown(filtered.length > 0)
+        const results = (resp.tasks ?? []).filter(ts => ts.id !== task?.id)
+        setBlockerResults(results)
+        setShowDropdown(results.length > 0)
       } catch {
         // ignore search errors
       }
     }, 300)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [blockerQuery, projectId, selectedBlockers, task?.id])
+  }, [blockerQuery, projectId, task?.id])
 
   function selectBlocker(ts: TaskSummary) {
     setSelectedBlockers(prev => [...prev, ts])
@@ -314,7 +312,7 @@ export default function TaskModal({
                     className="absolute z-10 w-full mt-1 rounded border shadow-lg"
                     style={{ background: 'var(--ka-panel)', borderColor: '#1e293b', maxHeight: 200, overflowY: 'auto' }}
                   >
-                    {blockerResults.map(ts => (
+                    {blockerResults.filter(ts => !selectedBlockers.some(b => b.id === ts.id)).map(ts => (
                       <button
                         key={ts.id}
                         type="button"

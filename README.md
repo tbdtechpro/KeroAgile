@@ -2,6 +2,8 @@
 
 A self-hostable agile board for your terminal and browser — powered by Claude.
 
+**License:** [BWL | AI-C2S | AI-T0](LICENSE) — free for workers and individuals; corporations require permission; the code may not be used to train AI models.
+
 ![KeroAgile board overview](docs/gifs/board-overview.gif)
 
 KeroAgile gives you Jira-style project tracking (projects, sprints, tasks, assignees, blockers, PR auto-close) with zero cloud account and zero vendor lock-in. Everything stores in a single SQLite file. Run the keyboard-first TUI in your terminal, or open the React web UI in any browser on your network. The MCP integration means Claude Code can read your board, create tasks, move cards, and link branches in plain English — from inside any repo you're working in.

@@ -5,6 +5,7 @@ type User struct {
 	DisplayName  string `json:"display_name"`
 	IsAgent      bool   `json:"is_agent"`
 	PasswordHash string `json:"-"` // bcrypt hash; never serialised
+	SyncOrigin   string `json:"sync_origin,omitempty"`
 }
 
 func (u User) DisplayPrefix() string {

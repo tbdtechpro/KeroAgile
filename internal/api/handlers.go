@@ -389,6 +389,10 @@ func (s *Server) handleAddBlocker(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRemoveBlocker(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
+	if _, err := s.svc.GetTask(taskID); err != nil {
+		writeErr(w, http.StatusNotFound, "task not found")
+		return
+	}
 	blockerID := r.PathValue("blocker_id")
 	if err := s.svc.RemoveDep(blockerID, taskID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

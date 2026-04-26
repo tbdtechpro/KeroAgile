@@ -29,23 +29,30 @@ const (
 	fieldCount
 )
 
+var priorities = []domain.Priority{
+	domain.PriorityLow,
+	domain.PriorityMedium,
+	domain.PriorityHigh,
+	domain.PriorityCritical,
+}
+
 // TaskForm is a modal overlay for creating or editing a task.
 type TaskForm struct {
 	task      *domain.Task
 	projectID string
 	users     []*domain.User
 
-	titleInput    textinput.Model
-	descInput     textarea.Model
-	assigneeIdx   int // 0 = none, 1..len(users) = users[idx-1]
-	priorityInput textinput.Model
-	pointsInput   textinput.Model
-	statusInput   textinput.Model
-	labelsInput   textinput.Model
-	sprints       []*domain.Sprint
-	sprintInput   textinput.Model
-	blocksInput   textinput.Model
-	blockedByIn   textinput.Model
+	titleInput  textinput.Model
+	descInput   textarea.Model
+	assigneeIdx int // 0 = none, 1..len(users) = users[idx-1]
+	priorityIdx int // index into priorities slice
+	pointsInput textinput.Model
+	statusInput textinput.Model
+	labelsInput textinput.Model
+	sprints     []*domain.Sprint
+	sprintInput textinput.Model
+	blocksInput textinput.Model
+	blockedByIn textinput.Model
 
 	focus  formField
 	width  int
@@ -101,9 +108,7 @@ func New(projectID string, users []*domain.User, defaultID string, task *domain.
 		}
 	}
 
-	f.priorityInput = textinput.New()
-	f.priorityInput.Placeholder = "medium"
-	f.priorityInput.Width = 10
+	f.priorityIdx = 1 // default: medium
 
 	f.pointsInput = textinput.New()
 	f.pointsInput.Placeholder = "0"
@@ -142,7 +147,12 @@ func New(projectID string, users []*domain.User, defaultID string, task *domain.
 				}
 			}
 		}
-		f.priorityInput.SetValue(string(task.Priority))
+		for i, p := range priorities {
+			if p == task.Priority {
+				f.priorityIdx = i
+				break
+			}
+		}
 		if task.Points != nil {
 			f.pointsInput.SetValue(fmt.Sprintf("%d", *task.Points))
 		}
@@ -162,7 +172,6 @@ func New(projectID string, users []*domain.User, defaultID string, task *domain.
 		f.blocksInput.SetValue(strings.Join(task.Blocking, ", "))
 		f.blockedByIn.SetValue(strings.Join(task.Blockers, ", "))
 	} else {
-		f.priorityInput.SetValue("medium")
 		f.statusInput.SetValue("backlog")
 	}
 
@@ -207,9 +216,17 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				f.assigneeIdx = (f.assigneeIdx - 1 + len(f.users) + 1) % (len(f.users) + 1)
 				return f, nil
 			}
+			if f.focus == fieldPriority {
+				f.priorityIdx = (f.priorityIdx - 1 + len(priorities)) % len(priorities)
+				return f, nil
+			}
 		case "right":
 			if f.focus == fieldAssignee {
 				f.assigneeIdx = (f.assigneeIdx + 1) % (len(f.users) + 1)
+				return f, nil
+			}
+			if f.focus == fieldPriority {
+				f.priorityIdx = (f.priorityIdx + 1) % len(priorities)
 				return f, nil
 			}
 		}
@@ -221,8 +238,6 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		f.titleInput, cmd = f.titleInput.Update(msg)
 	case fieldDesc:
 		f.descInput, cmd = f.descInput.Update(msg)
-	case fieldPriority:
-		f.priorityInput, cmd = f.priorityInput.Update(msg)
 	case fieldPoints:
 		f.pointsInput, cmd = f.pointsInput.Update(msg)
 	case fieldStatus:
@@ -261,7 +276,6 @@ func (f TaskForm) prevField() TaskForm {
 func (f *TaskForm) blurAll() {
 	f.titleInput.Blur()
 	f.descInput.Blur()
-	f.priorityInput.Blur()
 	f.pointsInput.Blur()
 	f.statusInput.Blur()
 	f.labelsInput.Blur()
@@ -279,7 +293,7 @@ func (f *TaskForm) focusCurrent() {
 	case fieldAssignee:
 		// cycling only — no textinput to focus
 	case fieldPriority:
-		f.priorityInput.Focus()
+		// cycling only — no textinput to focus
 	case fieldPoints:
 		f.pointsInput.Focus()
 	case fieldStatus:
@@ -299,11 +313,6 @@ func (f TaskForm) validate() string {
 	if strings.TrimSpace(f.titleInput.Value()) == "" {
 		return "title is required"
 	}
-	switch domain.Priority(strings.TrimSpace(f.priorityInput.Value())) {
-	case domain.PriorityLow, domain.PriorityMedium, domain.PriorityHigh, domain.PriorityCritical:
-	default:
-		return "invalid priority — use: low  medium  high  critical"
-	}
 	switch domain.Status(strings.TrimSpace(f.statusInput.Value())) {
 	case domain.StatusBacklog, domain.StatusTodo, domain.StatusInProgress, domain.StatusReview, domain.StatusDone:
 	default:
@@ -322,7 +331,7 @@ func (f TaskForm) buildSavedMsg() SavedMsg {
 		Title:       strings.TrimSpace(f.titleInput.Value()),
 		Description: f.descInput.Value(),
 		AssigneeID:  f.selectedAssigneeID(),
-		Priority:    domain.Priority(strings.TrimSpace(f.priorityInput.Value())),
+		Priority:    priorities[f.priorityIdx],
 		Status:      domain.Status(strings.TrimSpace(f.statusInput.Value())),
 		IsNew:       f.task == nil,
 	}
@@ -372,6 +381,14 @@ func (f TaskForm) selectedAssigneeID() string {
 	return f.users[f.assigneeIdx-1].ID
 }
 
+func (f TaskForm) priorityView() string {
+	p := priorities[f.priorityIdx]
+	if f.focus == fieldPriority {
+		return lipgloss.NewStyle().Foreground(styles.CAccentLt).Render("‹ " + p.Label() + " ›")
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(p.Color())).Render(p.Label())
+}
+
 func (f TaskForm) assigneeView() string {
 	name := "—"
 	if f.assigneeIdx > 0 && f.assigneeIdx <= len(f.users) {
@@ -410,11 +427,11 @@ func (f TaskForm) View() string {
 		errLine = "\n" + styles.Danger.Render("✗ "+f.err)
 	}
 
-	body := fmt.Sprintf("%s\n%s\n%s\n%s\n\n%s\n%s  %s  %s  %s\n\n%s          %s          %s\n%s  %s  %s\n\n%s\n%s\n%s\n[tab]next  [shift+tab]prev  [←/→]cycle assignee  [enter]save  [esc]cancel%s",
+	body := fmt.Sprintf("%s\n%s\n%s\n%s\n\n%s\n%s  %s  %s  %s\n\n%s          %s          %s\n%s  %s  %s\n\n%s\n%s\n%s\n[tab]next  [shift+tab]prev  [←/→]cycle assignee/priority  [enter]save  [esc]cancel%s",
 		titleLabel, f.titleInput.View(),
 		descLabel, f.descInput.View(),
 		assigneeLabel+"  "+priorityLabel+"  "+pointsLabel+"  "+statusLabel,
-		f.assigneeView(), f.priorityInput.View(), f.pointsInput.View(), f.statusInput.View(),
+		f.assigneeView(), f.priorityView(), f.pointsInput.View(), f.statusInput.View(),
 		labelsLabel, blocksLabel, blockedByLabel,
 		f.labelsInput.View(), f.blocksInput.View(), f.blockedByIn.View(),
 		sprintLabel, f.sprintInput.View(),

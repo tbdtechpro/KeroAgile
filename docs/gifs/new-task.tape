@@ -27,20 +27,21 @@ Sleep 0.6
 Type "Add keyboard shortcut help overlay"
 Sleep 0.5
 
-# Tab to description — skip it
+# Tab to description — type a brief description
 Tab
 Sleep 0.3
+Type "Show a help popup with all keybindings when ? is pressed"
+Sleep 0.5
 
 # Tab to assignee — leave as auto-suggested
 Tab
 Sleep 0.4
 
-# Tab to priority — change to high
+# Tab to priority — cycle right from medium → high using ← / →
 Tab
 Sleep 0.3
-Ctrl+A
-Type "high"
-Sleep 0.4
+Right
+Sleep 0.5
 
 # Tab to points
 Tab
@@ -54,7 +55,7 @@ Sleep 0.2
 Tab
 Sleep 0.2
 
-# Tab to sprint — save from here (Enter on a non-blocker field saves the form)
+# Tab to sprint — save from here
 Tab
 Sleep 0.3
 

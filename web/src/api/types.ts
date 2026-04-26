@@ -72,3 +72,10 @@ export interface UpdateTaskInput {
   labels?: string[]
   sprint_id?: number
 }
+
+export interface Secondary {
+  id: string
+  display_name: string
+  last_seen_at?: string
+  created_at: string
+}

@@ -1,4 +1,4 @@
-import type { Task, Project, User, Sprint, SprintSummary, CreateTaskInput, UpdateTaskInput } from './types'
+import type { Task, Project, User, Sprint, SprintSummary, CreateTaskInput, UpdateTaskInput, Secondary } from './types'
 
 const TOKEN_KEY = 'keroagile_token'
 
@@ -105,5 +105,25 @@ export const api = {
   },
   createSprint(name: string, projectId: string, startDate?: string, endDate?: string): Promise<Sprint> {
     return request('POST', '/api/sprints', { name, project_id: projectId, start_date: startDate, end_date: endDate })
+  },
+
+  // Sync — primary mode management
+  syncListSecondaries(): Promise<Secondary[]> {
+    return request('GET', '/api/sync/secondaries')
+  },
+  syncAddSecondary(id: string, displayName: string): Promise<{ id: string; token: string }> {
+    return request('POST', '/api/sync/secondaries', { id, display_name: displayName })
+  },
+  syncRevokeSecondary(id: string): Promise<void> {
+    return request('DELETE', `/api/sync/secondaries/${id}`)
+  },
+  syncListGrants(secondaryId: string): Promise<string[]> {
+    return request('GET', `/api/sync/secondaries/${secondaryId}/grants`)
+  },
+  syncGrantProject(secondaryId: string, projectId: string): Promise<void> {
+    return request('PUT', `/api/sync/grants/${secondaryId}/${projectId}`)
+  },
+  syncRevokeGrant(secondaryId: string, projectId: string): Promise<void> {
+    return request('DELETE', `/api/sync/grants/${secondaryId}/${projectId}`)
   },
 }

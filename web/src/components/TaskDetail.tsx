@@ -230,7 +230,6 @@ export default function TaskDetail({
                     onClick={() => handleBlockerClick(b.project_id || task.project_id, b.id)}
                     title={b.title || b.id}
                   >
-                    {isCross && <span>↗</span>}
                     <span>►</span>
                     <span>{b.id}</span>
                     {b.title && <span className="opacity-75">{b.title.length > 24 ? b.title.slice(0, 21) + '…' : b.title}</span>}

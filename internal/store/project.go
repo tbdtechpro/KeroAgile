@@ -9,14 +9,14 @@ import (
 
 func (s *Store) CreateProject(p *domain.Project) error {
 	_, err := s.db.Exec(
-		`INSERT INTO projects(id, name, repo_path, sprint_mode) VALUES(?,?,?,?)`,
-		p.ID, p.Name, p.RepoPath, boolInt(p.SprintMode),
+		`INSERT INTO projects(id, name, repo_path, sprint_mode, sync_origin, sync_cursor, sync_status) VALUES(?,?,?,?,?,?,?)`,
+		p.ID, p.Name, p.RepoPath, boolInt(p.SprintMode), p.SyncOrigin, p.SyncCursor, p.SyncStatus,
 	)
 	return err
 }
 
 func (s *Store) ListProjects() ([]*domain.Project, error) {
-	rows, err := s.db.Query(`SELECT id, name, repo_path, sprint_mode FROM projects ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, name, repo_path, sprint_mode, sync_origin, sync_cursor, sync_status FROM projects ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func (s *Store) ListProjects() ([]*domain.Project, error) {
 }
 
 func (s *Store) GetProject(id string) (*domain.Project, error) {
-	row := s.db.QueryRow(`SELECT id, name, repo_path, sprint_mode FROM projects WHERE id=?`, id)
+	row := s.db.QueryRow(`SELECT id, name, repo_path, sprint_mode, sync_origin, sync_cursor, sync_status FROM projects WHERE id=?`, id)
 	p, err := scanProject(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
@@ -43,8 +43,8 @@ func (s *Store) GetProject(id string) (*domain.Project, error) {
 
 func (s *Store) UpdateProject(p *domain.Project) error {
 	_, err := s.db.Exec(
-		`UPDATE projects SET name=?, repo_path=?, sprint_mode=? WHERE id=?`,
-		p.Name, p.RepoPath, boolInt(p.SprintMode), p.ID,
+		`UPDATE projects SET name=?, repo_path=?, sprint_mode=?, sync_origin=?, sync_cursor=?, sync_status=? WHERE id=?`,
+		p.Name, p.RepoPath, boolInt(p.SprintMode), p.SyncOrigin, p.SyncCursor, p.SyncStatus, p.ID,
 	)
 	return err
 }
@@ -56,7 +56,7 @@ type rowScanner interface {
 func scanProject(r rowScanner) (*domain.Project, error) {
 	var p domain.Project
 	var sprintMode int
-	err := r.Scan(&p.ID, &p.Name, &p.RepoPath, &sprintMode)
+	err := r.Scan(&p.ID, &p.Name, &p.RepoPath, &sprintMode, &p.SyncOrigin, &p.SyncCursor, &p.SyncStatus)
 	if err != nil {
 		return nil, err
 	}

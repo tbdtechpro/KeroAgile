@@ -20,11 +20,12 @@ cmd/keroagile/      Cobra CLI + BubbleTea entry point
 internal/tui/       BubbleTea TUI (app, sidebar, board, detail, forms, styles)
 internal/git/       git/gh CLI wrappers (no imports from tui or cmd)
 internal/config/    TOML config (~/.config/keroagile/config.toml)
-internal/store/     SQLite implementation of domain.Store interface
+internal/store/     SQLite implementation of domain.Store + syncsrv interfaces
+internal/syncsrv/   Sync types, interfaces, client, daemon (imports domain)
 internal/domain/    Pure types + service + Store interface (zero I/O, zero external imports)
 ```
 
-`domain` imports nothing from this project. `store` imports only `domain`. The `domain.Store` interface is defined in `internal/domain/store.go` — not in the store package — so `domain` never imports `store` (dependency inversion).
+`domain` imports nothing from this project. `syncsrv` imports only `domain` (for entity types used by the daemon). `store` imports `domain` and `syncsrv`. The `domain.Store` interface is defined in `internal/domain/store.go` — not in the store package — so `domain` never imports `store` (dependency inversion). Similarly, `syncsrv.PrimaryStore` / `syncsrv.SecondaryStore` are defined in `internal/syncsrv/store.go` and implemented by `store.Store`.
 
 ## Key types
 

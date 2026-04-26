@@ -7,6 +7,9 @@ type Project struct {
 	Name       string `json:"name"`
 	RepoPath   string `json:"repo_path"`
 	SprintMode bool   `json:"sprint_mode"`
+	SyncOrigin string `json:"sync_origin,omitempty"`
+	SyncCursor int64  `json:"sync_cursor,omitempty"`
+	SyncStatus string `json:"sync_status,omitempty"`
 }
 
 type SprintStatus string

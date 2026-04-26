@@ -1,6 +1,8 @@
 # KeroAgile
 
-A self-hostable agile board for your terminal and browser — powered by Claude.
+A self-hostable agile board for your terminal and browser, with first-class Claude Code integration.
+
+**License:** [BWL | AI-C2S | AI-T0](LICENSE) — free for workers and individuals; corporations require permission; the code may not be used to train AI models.
 
 ![KeroAgile board overview](docs/gifs/board-overview.gif)
 

@@ -26,6 +26,8 @@ export interface Project {
   name: string
   repo_path: string
   sprint_mode: boolean
+  sync_origin?: string
+  sync_status?: string
 }
 
 export interface User {
@@ -71,4 +73,11 @@ export interface UpdateTaskInput {
   points?: number
   labels?: string[]
   sprint_id?: number
+}
+
+export interface Secondary {
+  id: string
+  display_name: string
+  last_seen_at?: string
+  created_at: string
 }

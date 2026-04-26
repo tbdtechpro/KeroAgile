@@ -1,12 +1,15 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/syncsrv"
 )
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +95,11 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "read body")
+		return
+	}
 	var req struct {
 		Title       string   `json:"title"`
 		Description string   `json:"description"`
@@ -103,12 +111,16 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		Labels      []string `json:"labels"`
 		SprintID    *int64   `json:"sprint_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Title == "" || req.ProjectID == "" {
 		writeErr(w, http.StatusBadRequest, "title and project_id are required")
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if s.maybeSyncProxy(w, r, req.ProjectID) {
 		return
 	}
 	opts := domain.TaskCreateOpts{
@@ -124,6 +136,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.logChange(r, t.ProjectID, syncsrv.EventTaskCreated, t)
 	writeJSON(w, http.StatusCreated, t)
 }
 
@@ -141,6 +154,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	existing, err := s.svc.GetTask(id)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "task not found")
+		return
+	}
+	if s.maybeSyncProxy(w, r, existing.ProjectID) {
 		return
 	}
 	var req struct {
@@ -164,6 +180,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		s.logChange(r, t.ProjectID, syncsrv.EventTaskUpdated, t)
 		writeJSON(w, http.StatusOK, t)
 		return
 	}
@@ -198,14 +215,25 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.logChange(r, t.ProjectID, syncsrv.EventTaskUpdated, t)
 	writeJSON(w, http.StatusOK, t)
 }
 
 func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
-	if err := s.svc.DeleteTask(r.PathValue("id")); err != nil {
+	id := r.PathValue("id")
+	task, err := s.svc.GetTask(id)
+	if err != nil {
 		writeErr(w, http.StatusNotFound, "task not found")
 		return
 	}
+	if s.maybeSyncProxy(w, r, task.ProjectID) {
+		return
+	}
+	if err := s.svc.DeleteTask(id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to delete task")
+		return
+	}
+	s.logChange(r, task.ProjectID, syncsrv.EventTaskDeleted, map[string]string{"id": id})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -232,18 +260,27 @@ func (s *Server) handleListSprints(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateSprint(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "read body")
+		return
+	}
 	var req struct {
 		Name      string `json:"name"`
 		ProjectID string `json:"project_id"`
 		StartDate string `json:"start_date"`
 		EndDate   string `json:"end_date"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Name == "" || req.ProjectID == "" {
 		writeErr(w, http.StatusBadRequest, "name and project_id are required")
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if s.maybeSyncProxy(w, r, req.ProjectID) {
 		return
 	}
 	var start, end *time.Time
@@ -264,6 +301,7 @@ func (s *Server) handleCreateSprint(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.logChange(r, sp.ProjectID, syncsrv.EventSprintCreated, sp)
 	writeJSON(w, http.StatusCreated, sp)
 }
 
@@ -279,4 +317,37 @@ func (s *Server) handleGetSprint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sp)
+}
+
+// maybeSyncProxy checks if projectID is a synced project and, if so, forwards the
+// request to the primary instead. Returns true if the response has already been written
+// (either proxied successfully or 503 written because primary is offline).
+func (s *Server) maybeSyncProxy(w http.ResponseWriter, r *http.Request, projectID string) bool {
+	if s.syncClient == nil {
+		return false
+	}
+	proj, err := s.svc.GetProject(projectID)
+	if err != nil || proj.SyncOrigin == "" {
+		return false
+	}
+	if s.syncClient.State() == syncsrv.StateOffline {
+		writeErr(w, http.StatusServiceUnavailable,
+			"primary server unreachable — synced projects are read-only until reconnection")
+		return true
+	}
+	s.syncClient.Proxy(w, r, r.URL.Path)
+	return true
+}
+
+// logChange writes a change_log event for a completed mutation. Best-effort: errors are ignored.
+func (s *Server) logChange(r *http.Request, projectID, eventType string, payload any) {
+	if s.store == nil {
+		return
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	origin := r.Header.Get("X-Sync-Origin")
+	_, _ = s.store.WriteChangeLog(projectID, eventType, data, origin)
 }

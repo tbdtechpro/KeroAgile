@@ -483,6 +483,41 @@ With the web interface running on the homelab server, any device on the home net
 
 ---
 
+## 6. Cross-network sync (v0.4.0) ✓ Shipped
+
+Multi-install sync so a primary KeroAgile server (e.g. homelab) can replicate selected projects to secondary installs (e.g. laptop), with write-through proxy keeping the primary authoritative.
+
+### 6.1 Primary-side sync API ✓
+
+New `/api/sync/*` endpoints on the primary: heartbeat, snapshot, SSE stream, secondary registration, grant management. Secondaries authenticate with long-lived SHA-256 tokens (not user JWTs). Change log (`change_log` table) records every mutation as an append-only event stream that secondaries consume.
+
+### 6.2 Secondary sync daemon ✓
+
+Background goroutine on the secondary that:
+- Polls the primary's heartbeat every 15 seconds; transitions `online → reconnecting → offline` after threshold misses
+- Opens an SSE stream for each synced project, applying incoming events (task/sprint/user upsert, task delete) to the local SQLite store
+- Write-through proxy: mutations to synced projects are forwarded to the primary; returns 503 if primary is offline (read-only degraded mode)
+
+### 6.3 Sync Settings web UI ✓
+
+Primary-mode Sync Settings page (header nav → "Sync"):
+- Register secondaries (generates one-time display token)
+- Per-secondary project grant management (checkbox list)
+- Revoke secondaries
+
+Secondary-mode features wired into the board:
+- Sync status indicator in header (green/yellow/red dot)
+- "Add Synced Project" modal — provide primary URL, token, project ID to pull initial snapshot
+- Frozen project banner when primary revokes a grant
+
+### 6.4 End-to-end integration tests ✓
+
+In-process two-server test cluster (`internal/syncsrv/integration_test.go`):
+- `TestBidirectionalSync`: primary→secondary SSE delivery + secondary→primary write-proxy
+- `TestOfflineDetection`: heartbeat threshold transitions to `StateOffline`
+
+---
+
 ## Summary table
 
 | # | Item | Phase | Effort |
@@ -509,5 +544,9 @@ With the web interface running on the homelab server, any device on the home net
 | 5.2 | Web UI feature parity with TUI | v1.0.0 | XL |
 | 5.3 | `KeroAgile web` unified server | v1.0.0 | M |
 | 5.4 | Mobile-responsive layout | v1.0.0 | M |
+| 6.1 | Primary sync API (SSE stream, change log) | v0.4.0 ✓ | XL |
+| 6.2 | Secondary sync daemon + write-through proxy | v0.4.0 ✓ | XL |
+| 6.3 | Sync Settings UI + secondary board features | v0.4.0 ✓ | L |
+| 6.4 | End-to-end integration tests | v0.4.0 ✓ | M |
 
 **Effort key:** XS < 1 day · S 1–2 days · M 3–5 days · L 1–2 weeks · XL 2–4 weeks

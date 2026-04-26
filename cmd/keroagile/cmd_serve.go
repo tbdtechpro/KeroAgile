@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/tbdtechpro/KeroAgile/internal/api"
+	"github.com/tbdtechpro/KeroAgile/internal/syncsrv"
 	webstatic "github.com/tbdtechpro/KeroAgile/internal/web"
 )
 
@@ -52,9 +53,50 @@ Configuration:
 
 		mux := http.NewServeMux()
 
-		// API routes
-		apiSrv := api.New(svc, secret)
+		// Determine sync mode; default to standalone if not configured.
+		syncMode := syncsrv.Mode(cfg.Sync.Mode)
+		if syncMode == "" {
+			syncMode = syncsrv.ModeStandalone
+		}
+
+		// Create sync client for secondary mode (nil otherwise).
+		var syncClient *syncsrv.Client
+		if cfg.Sync.Mode == "secondary" {
+			dcfg := syncsrv.ClientConfig{
+				PrimaryURL:  cfg.Sync.PrimaryURL,
+				APIToken:    cfg.Sync.APIToken,
+				SecondaryID: cfg.Sync.SecondaryID,
+			}
+			syncClient = syncsrv.NewClient(dcfg, st)
+		}
+
+		// API routes (syncClient is nil for non-secondary mode).
+		apiSrv := api.New(svc, st, st, secret, syncMode, syncClient)
 		mux.Handle("/api/", apiSrv)
+
+		// Start daemon and heartbeat if secondary with synced projects.
+		if syncClient != nil {
+			projects, err := svc.ListProjects()
+			if err == nil {
+				var synced []string
+				var startCursor int64
+				for _, p := range projects {
+					if p.SyncOrigin != "" {
+						synced = append(synced, p.ID)
+						if p.SyncCursor > startCursor {
+							startCursor = p.SyncCursor
+						}
+					}
+				}
+				syncClient.Start() // heartbeat always needed for offline detection
+				defer syncClient.Stop()
+				if len(synced) > 0 {
+					daemon := syncsrv.NewDaemon(syncClient, st, st)
+					daemon.Start(synced, startCursor)
+					defer daemon.Stop() // stops SSE consumer goroutine
+				}
+			}
+		}
 
 		// Embedded React web UI — SPA with client-side routing
 		mux.Handle("/", spaHandler(webstatic.FS()))

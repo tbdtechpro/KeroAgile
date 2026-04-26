@@ -9,14 +9,14 @@ import (
 
 func (s *Store) CreateUser(u *domain.User) error {
 	_, err := s.db.Exec(
-		`INSERT INTO users(id, display_name, is_agent, password_hash) VALUES(?,?,?,?)`,
-		u.ID, u.DisplayName, boolInt(u.IsAgent), u.PasswordHash,
+		`INSERT INTO users(id, display_name, is_agent, password_hash, sync_origin) VALUES(?,?,?,?,?)`,
+		u.ID, u.DisplayName, boolInt(u.IsAgent), u.PasswordHash, u.SyncOrigin,
 	)
 	return err
 }
 
 func (s *Store) ListUsers() ([]*domain.User, error) {
-	rows, err := s.db.Query(`SELECT id, display_name, is_agent, password_hash FROM users ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, display_name, is_agent, password_hash, sync_origin FROM users ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func (s *Store) ListUsers() ([]*domain.User, error) {
 }
 
 func (s *Store) GetUser(id string) (*domain.User, error) {
-	row := s.db.QueryRow(`SELECT id, display_name, is_agent, password_hash FROM users WHERE id=?`, id)
+	row := s.db.QueryRow(`SELECT id, display_name, is_agent, password_hash, sync_origin FROM users WHERE id=?`, id)
 	u, err := scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
@@ -56,7 +56,7 @@ func (s *Store) SetUserPassword(id, hash string) error {
 func scanUser(r rowScanner) (*domain.User, error) {
 	var u domain.User
 	var isAgent int
-	if err := r.Scan(&u.ID, &u.DisplayName, &isAgent, &u.PasswordHash); err != nil {
+	if err := r.Scan(&u.ID, &u.DisplayName, &isAgent, &u.PasswordHash, &u.SyncOrigin); err != nil {
 		return nil, err
 	}
 	u.IsAgent = isAgent == 1

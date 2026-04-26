@@ -174,6 +174,45 @@ func TestGetTaskBlockingDetails(t *testing.T) {
 	assert.Equal(t, "Blocked task", task.BlockingDetails[0].Title)
 }
 
+func TestDepReconciliation(t *testing.T) {
+	s := testStore(t)
+	require.NoError(t, s.CreateProject(&domain.Project{ID: "KA", Name: "KeroAgile"}))
+
+	makeTask := func(id string) {
+		require.NoError(t, s.CreateTask(&domain.Task{
+			ID: id, ProjectID: "KA", Title: id,
+			Status: domain.StatusBacklog, Priority: domain.PriorityMedium,
+		}))
+	}
+
+	seq1, _ := s.NextTaskSeq("KA")
+	t1 := fmt.Sprintf("KA-%03d", seq1)
+	seq2, _ := s.NextTaskSeq("KA")
+	t2 := fmt.Sprintf("KA-%03d", seq2)
+	seq3, _ := s.NextTaskSeq("KA")
+	t3 := fmt.Sprintf("KA-%03d", seq3)
+	seq4, _ := s.NextTaskSeq("KA")
+	t4 := fmt.Sprintf("KA-%03d", seq4)
+
+	makeTask(t1)
+	makeTask(t2)
+	makeTask(t3)
+	makeTask(t4)
+
+	// t1 is initially blocked by t2 and t3
+	require.NoError(t, s.AddDep(t2, t1))
+	require.NoError(t, s.AddDep(t3, t1))
+
+	// Simulate form save: keep t3, remove t2, add t4
+	require.NoError(t, s.RemoveDep(t2, t1))
+	require.NoError(t, s.AddDep(t4, t1))
+
+	blockers, _, err := s.GetTaskDeps(t1)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{t3, t4}, blockers)
+	assert.NotContains(t, blockers, t2)
+}
+
 func TestUserSyncOriginColumn(t *testing.T) {
 	s := testStore(t)
 	err := s.CreateUser(&domain.User{

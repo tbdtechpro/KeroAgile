@@ -150,7 +150,7 @@ func (d Detail) View() string {
 		sb.WriteString("\n" + styles.Muted.Render("Blocked by") + "\n")
 		if len(t.BlockerDetails) > 0 {
 			for _, bd := range t.BlockerDetails {
-				label := formatBlockerChip(bd)
+				label := formatBlockerChip(bd, t.ProjectID)
 				sb.WriteString(styles.Danger.Render("⚠ ") + styles.NormalRow.Render(label) + "\n")
 			}
 		} else {
@@ -160,11 +160,11 @@ func (d Detail) View() string {
 		}
 	}
 
-	if len(t.Blocking) > 0 {
+	if len(t.BlockingDetails) > 0 {
 		sb.WriteString("\n" + styles.Muted.Render("Blocking") + "\n")
 		if len(t.BlockingDetails) > 0 {
 			for _, bd := range t.BlockingDetails {
-				label := formatBlockerChip(bd)
+				label := formatBlockerChip(bd, t.ProjectID)
 				sb.WriteString(styles.NormalRow.Render("► "+label) + "\n")
 			}
 		} else {
@@ -218,12 +218,12 @@ func truncate(s string, n int) string {
 
 // formatBlockerChip formats a TaskSummary for display in the detail panel.
 // Cross-project tasks are prefixed with [PROJECT].
-func formatBlockerChip(ts *domain.TaskSummary) string {
+func formatBlockerChip(ts *domain.TaskSummary, currentProjectID string) string {
 	title := ts.Title
 	if len(title) > 40 {
 		title = title[:37] + "…"
 	}
-	if ts.ProjectID != "" {
+	if ts.ProjectID != currentProjectID {
 		return fmt.Sprintf("[%s] %s · %s", ts.ProjectID, ts.ID, title)
 	}
 	return fmt.Sprintf("%s · %s", ts.ID, title)

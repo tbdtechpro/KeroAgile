@@ -1,6 +1,13 @@
 export type Status = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done'
 export type Priority = 'low' | 'medium' | 'high' | 'critical'
 
+export interface TaskSummary {
+  id: string
+  title: string
+  project_id: string
+  status: Status
+}
+
 export interface Task {
   id: string
   project_id: string
@@ -17,6 +24,8 @@ export interface Task {
   labels: string[]
   blockers: string[] | null
   blocking: string[] | null
+  blocker_details?: TaskSummary[] | null
+  blocking_details?: TaskSummary[] | null
   created_at: string
   updated_at: string
 }

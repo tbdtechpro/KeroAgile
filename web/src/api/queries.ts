@@ -67,3 +67,27 @@ export function useDeleteTask() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   })
 }
+
+export function useAddBlocker() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, blockerId }: { taskId: string; blockerId: string }) =>
+      api.addBlocker(taskId, blockerId),
+    onSuccess: (_data, { taskId }) => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['task', taskId] })
+    },
+  })
+}
+
+export function useRemoveBlocker() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, blockerId }: { taskId: string; blockerId: string }) =>
+      api.removeBlocker(taskId, blockerId),
+    onSuccess: (_data, { taskId }) => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['task', taskId] })
+    },
+  })
+}

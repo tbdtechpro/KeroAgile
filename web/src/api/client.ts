@@ -90,17 +90,19 @@ export const api = {
     return request('DELETE', `/api/tasks/${id}`)
   },
 
-  searchTasks: (q: string, hintProjectId?: string): Promise<{ tasks: TaskSummary[] }> => {
+  searchTasks(q: string, hintProjectId?: string): Promise<{ tasks: TaskSummary[] }> {
     const qs = new URLSearchParams({ q, limit: '20' })
     if (hintProjectId) qs.set('hint_project_id', hintProjectId)
     return request('GET', `/api/search/tasks?${qs}`)
   },
 
-  addBlocker: (taskId: string, blockerId: string): Promise<{ status: string }> =>
-    request('POST', `/api/tasks/${taskId}/blockers`, { blocker_id: blockerId }),
+  addBlocker(taskId: string, blockerId: string): Promise<{ status: string }> {
+    return request('POST', `/api/tasks/${taskId}/blockers`, { blocker_id: blockerId })
+  },
 
-  removeBlocker: (taskId: string, blockerId: string): Promise<{ status: string }> =>
-    request('DELETE', `/api/tasks/${taskId}/blockers/${blockerId}`),
+  removeBlocker(taskId: string, blockerId: string): Promise<{ status: string }> {
+    return request('DELETE', `/api/tasks/${taskId}/blockers/${blockerId}`)
+  },
 
   // Users
   listUsers(): Promise<User[]> {

@@ -73,9 +73,9 @@ export function useAddBlocker() {
   return useMutation({
     mutationFn: ({ taskId, blockerId }: { taskId: string; blockerId: string }) =>
       api.addBlocker(taskId, blockerId),
-    onSuccess: (_data, { taskId }) => {
-      qc.invalidateQueries({ queryKey: ['tasks'] })
+    onSuccess: (_data, { taskId, blockerId }) => {
       qc.invalidateQueries({ queryKey: ['tasks', taskId] })
+      qc.invalidateQueries({ queryKey: ['tasks', blockerId] })
     },
   })
 }
@@ -85,9 +85,9 @@ export function useRemoveBlocker() {
   return useMutation({
     mutationFn: ({ taskId, blockerId }: { taskId: string; blockerId: string }) =>
       api.removeBlocker(taskId, blockerId),
-    onSuccess: (_data, { taskId }) => {
-      qc.invalidateQueries({ queryKey: ['tasks'] })
+    onSuccess: (_data, { taskId, blockerId }) => {
       qc.invalidateQueries({ queryKey: ['tasks', taskId] })
+      qc.invalidateQueries({ queryKey: ['tasks', blockerId] })
     },
   })
 }

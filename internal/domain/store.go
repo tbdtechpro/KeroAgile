@@ -19,6 +19,7 @@ type Store interface {
 	CreateTask(t *Task) error
 	ListTasks(projectID string, f TaskFilters) ([]*Task, error)
 	GetTask(id string) (*Task, error)
+	TaskByBranch(branch string) (*Task, error)
 	UpdateTask(t *Task) error
 	DeleteTask(id string) error
 	GetTaskDeps(taskID string) (blockers, blocking []string, err error)

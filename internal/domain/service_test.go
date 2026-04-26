@@ -78,6 +78,14 @@ func (m *mockStore) GetTask(id string) (*domain.Task, error) {
 	}
 	return t, nil
 }
+func (m *mockStore) TaskByBranch(branch string) (*domain.Task, error) {
+	for _, t := range m.tasks {
+		if t.Branch == branch {
+			return t, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
 func (m *mockStore) UpdateTask(t *domain.Task) error {
 	m.tasks[t.ID] = t
 	return nil

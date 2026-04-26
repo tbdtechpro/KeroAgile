@@ -127,6 +127,39 @@ func TestTaskListSprintFilter(t *testing.T) {
 	assert.Equal(t, "KA-001", list[0].ID)
 }
 
+func TestTaskByBranch(t *testing.T) {
+	s := testStore(t)
+	seedProject(t, s)
+	now := time.Now().UTC()
+
+	t.Run("miss", func(t *testing.T) {
+		_, err := s.TaskByBranch("feature/no-such-branch")
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+	})
+
+	t.Run("hit", func(t *testing.T) {
+		branch := "feature/KA-001-fix-login"
+		require.NoError(t, s.CreateTask(&domain.Task{
+			ID: "KA-001", ProjectID: "KA", Title: "Fix login",
+			Status: domain.StatusBacklog, Priority: domain.PriorityHigh,
+			Branch: branch, CreatedAt: now, UpdatedAt: now,
+		}))
+		got, err := s.TaskByBranch(branch)
+		require.NoError(t, err)
+		assert.Equal(t, "KA-001", got.ID)
+	})
+
+	t.Run("empty branch does not match unlinked tasks", func(t *testing.T) {
+		require.NoError(t, s.CreateTask(&domain.Task{
+			ID: "KA-002", ProjectID: "KA", Title: "No branch",
+			Status: domain.StatusBacklog, Priority: domain.PriorityMedium,
+			CreatedAt: now, UpdatedAt: now,
+		}))
+		_, err := s.TaskByBranch("")
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+	})
+}
+
 func TestNextTaskSeq(t *testing.T) {
 	s := testStore(t)
 	seedProject(t, s)

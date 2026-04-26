@@ -81,6 +81,22 @@ func (s *Store) GetTask(id string) (*domain.Task, error) {
 	return t, nil
 }
 
+func (s *Store) TaskByBranch(branch string) (*domain.Task, error) {
+	if branch == "" {
+		return nil, domain.ErrNotFound
+	}
+	row := s.db.QueryRow(
+		`SELECT id,project_id,sprint_id,title,description,status,priority,
+		 points,assignee_id,branch,pr_number,pr_merged,labels,created_at,updated_at
+		 FROM tasks WHERE branch=? ORDER BY updated_at DESC LIMIT 1`, branch,
+	)
+	t, err := scanTask(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	return t, err
+}
+
 func (s *Store) ListTasks(projectID string, f domain.TaskFilters) ([]*domain.Task, error) {
 	q := `SELECT id,project_id,sprint_id,title,description,status,priority,
 	      points,assignee_id,branch,pr_number,pr_merged,labels,created_at,updated_at

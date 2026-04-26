@@ -173,6 +173,14 @@ func (s *Store) RemoveDep(blockerID, blockedID string) error {
 	return err
 }
 
+func (s *Store) SearchTasks(q string, limit int) ([]*domain.TaskSummary, error) {
+	return s.SearchTasksWithHint(q, limit, "")
+}
+
+func (s *Store) SearchTasksWithHint(q string, limit int, hintProjectID string) ([]*domain.TaskSummary, error) {
+	return nil, nil // stub — implemented in Task 2
+}
+
 func scanTask(r rowScanner) (*domain.Task, error) {
 	var t domain.Task
 	var status, priority, labels, createdAt, updatedAt string

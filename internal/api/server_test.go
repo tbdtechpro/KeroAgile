@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tbdtechpro/KeroAgile/internal/api"
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
@@ -125,6 +127,48 @@ func TestTaskCRUD(t *testing.T) {
 	// Delete task
 	rr = authed(http.MethodDelete, "/api/tasks/"+taskID, nil)
 	require.Equal(t, http.StatusNoContent, rr.Code)
+}
+
+// loginTestUser creates a test user, sets a password, logs in, and returns the JWT token.
+func loginTestUser(t *testing.T, srv *api.Server, svc *domain.Service) string {
+	t.Helper()
+	_, err := svc.CreateUser("testuser", "Test User", false)
+	require.NoError(t, err)
+	hash, err := api.HashPassword("testpw")
+	require.NoError(t, err)
+	require.NoError(t, svc.SetUserPasswordHash("testuser", hash))
+
+	loginBody, _ := json.Marshal(map[string]string{"user_id": "testuser", "password": "testpw"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBuffer(loginBody))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	token := resp["token"]
+	require.NotEmpty(t, token)
+	return token
+}
+
+func TestMutationWritesChangeLog(t *testing.T) {
+	srv, svc, st := newTestServer(t)
+	token := loginTestUser(t, srv, svc)
+
+	require.NoError(t, svc.CreateProject("TL", "TestLog", ""))
+
+	body := `{"project_id":"TL","title":"hello"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	events, err := st.ReadChanges("TL", 0)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "task.created", events[0].EventType)
 }
 
 func TestSyncHeartbeatRequiresAuth(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/syncsrv"
 )
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -124,6 +125,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.logChange(r, t.ProjectID, syncsrv.EventTaskCreated, t)
 	writeJSON(w, http.StatusCreated, t)
 }
 
@@ -164,6 +166,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		s.logChange(r, t.ProjectID, syncsrv.EventTaskUpdated, t)
 		writeJSON(w, http.StatusOK, t)
 		return
 	}
@@ -198,14 +201,22 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.logChange(r, t.ProjectID, syncsrv.EventTaskUpdated, t)
 	writeJSON(w, http.StatusOK, t)
 }
 
 func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
-	if err := s.svc.DeleteTask(r.PathValue("id")); err != nil {
+	id := r.PathValue("id")
+	task, err := s.svc.GetTask(id)
+	if err != nil {
 		writeErr(w, http.StatusNotFound, "task not found")
 		return
 	}
+	if err := s.svc.DeleteTask(id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to delete task")
+		return
+	}
+	s.logChange(r, task.ProjectID, syncsrv.EventTaskDeleted, map[string]string{"id": id})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -264,6 +275,7 @@ func (s *Server) handleCreateSprint(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.logChange(r, sp.ProjectID, syncsrv.EventSprintCreated, sp)
 	writeJSON(w, http.StatusCreated, sp)
 }
 
@@ -279,4 +291,17 @@ func (s *Server) handleGetSprint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sp)
+}
+
+// logChange writes a change_log event for a completed mutation. Best-effort: errors are ignored.
+func (s *Server) logChange(r *http.Request, projectID, eventType string, payload any) {
+	if s.store == nil {
+		return
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	origin := r.Header.Get("X-Sync-Origin")
+	_, _ = s.store.WriteChangeLog(projectID, eventType, data, origin)
 }

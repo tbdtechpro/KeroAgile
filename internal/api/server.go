@@ -108,6 +108,9 @@ func (s *Server) syncAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// StoreForTest returns the primary store for test assertions.
+func (s *Server) StoreForTest() syncsrv.PrimaryStore { return s.store }
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

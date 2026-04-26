@@ -63,6 +63,32 @@ Configuration:
 		apiSrv := api.New(svc, st, secret, syncMode)
 		mux.Handle("/api/", apiSrv)
 
+		if cfg.Sync.Mode == "secondary" {
+			projects, err := svc.ListProjects()
+			if err == nil {
+				var synced []string
+				var startCursor int64
+				for _, p := range projects {
+					if p.SyncOrigin != "" {
+						synced = append(synced, p.ID)
+						if p.SyncCursor > startCursor {
+							startCursor = p.SyncCursor
+						}
+					}
+				}
+				if len(synced) > 0 {
+					dcfg := syncsrv.ClientConfig{
+						PrimaryURL:  cfg.Sync.PrimaryURL,
+						APIToken:    cfg.Sync.APIToken,
+						SecondaryID: cfg.Sync.SecondaryID,
+					}
+					daemon := syncsrv.NewDaemon(dcfg, st, st) // st implements both interfaces
+					daemon.Start(synced, startCursor)
+					defer daemon.Stop()
+				}
+			}
+		}
+
 		// Embedded React web UI — SPA with client-side routing
 		mux.Handle("/", spaHandler(webstatic.FS()))
 

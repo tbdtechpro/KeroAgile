@@ -59,11 +59,23 @@ Configuration:
 			syncMode = syncsrv.ModeStandalone
 		}
 
-		// API routes
-		apiSrv := api.New(svc, st, secret, syncMode)
+		// Create sync client for secondary mode (nil otherwise).
+		var syncClient *syncsrv.Client
+		if cfg.Sync.Mode == "secondary" {
+			dcfg := syncsrv.ClientConfig{
+				PrimaryURL:  cfg.Sync.PrimaryURL,
+				APIToken:    cfg.Sync.APIToken,
+				SecondaryID: cfg.Sync.SecondaryID,
+			}
+			syncClient = syncsrv.NewClient(dcfg, st)
+		}
+
+		// API routes (syncClient is nil for non-secondary mode).
+		apiSrv := api.New(svc, st, secret, syncMode, syncClient)
 		mux.Handle("/api/", apiSrv)
 
-		if cfg.Sync.Mode == "secondary" {
+		// Start daemon and heartbeat if secondary with synced projects.
+		if syncClient != nil {
 			projects, err := svc.ListProjects()
 			if err == nil {
 				var synced []string
@@ -76,15 +88,12 @@ Configuration:
 						}
 					}
 				}
+				syncClient.Start() // heartbeat always needed for offline detection
+				defer syncClient.Stop()
 				if len(synced) > 0 {
-					dcfg := syncsrv.ClientConfig{
-						PrimaryURL:  cfg.Sync.PrimaryURL,
-						APIToken:    cfg.Sync.APIToken,
-						SecondaryID: cfg.Sync.SecondaryID,
-					}
-					daemon := syncsrv.NewDaemon(dcfg, st, st) // st implements both interfaces
+					daemon := syncsrv.NewDaemon(syncClient, st, st)
 					daemon.Start(synced, startCursor)
-					defer daemon.Stop()
+					defer daemon.Stop() // stops SSE consumer goroutine
 				}
 			}
 		}

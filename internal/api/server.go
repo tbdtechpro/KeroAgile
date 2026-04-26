@@ -19,16 +19,18 @@ const (
 
 // Server is the KeroAgile HTTP API server.
 type Server struct {
-	svc      *domain.Service
-	store    syncsrv.PrimaryStore
-	secret   string
-	syncMode syncsrv.Mode
-	mux      *http.ServeMux
+	svc        *domain.Service
+	store      syncsrv.PrimaryStore
+	syncClient *syncsrv.Client // non-nil on secondary installs; nil for standalone/primary
+	secret     string
+	syncMode   syncsrv.Mode
+	mux        *http.ServeMux
 }
 
-// New creates a Server and registers all routes.
-func New(svc *domain.Service, st syncsrv.PrimaryStore, secret string, mode syncsrv.Mode) *Server {
-	s := &Server{svc: svc, store: st, secret: secret, syncMode: mode, mux: http.NewServeMux()}
+// New creates a Server and registers all routes. syncClient must be non-nil when mode is
+// ModeSecondary so that write proxying and 503-on-offline work; pass nil for standalone/primary.
+func New(svc *domain.Service, st syncsrv.PrimaryStore, secret string, mode syncsrv.Mode, syncClient *syncsrv.Client) *Server {
+	s := &Server{svc: svc, store: st, syncClient: syncClient, secret: secret, syncMode: mode, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }

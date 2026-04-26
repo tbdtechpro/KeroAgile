@@ -23,7 +23,7 @@ func newTestServer(t *testing.T) (*api.Server, *domain.Service, *store.Store) {
 	t.Cleanup(func() { db.Close() })
 	st := store.New(db)
 	svc := domain.NewService(st)
-	return api.New(svc, st, "test-secret", syncsrv.ModeStandalone), svc, st
+	return api.New(svc, st, "test-secret", syncsrv.ModeStandalone, nil), svc, st
 }
 
 func TestLoginInvalidCredentials(t *testing.T) {
@@ -169,6 +169,45 @@ func TestMutationWritesChangeLog(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, events, 1)
 	assert.Equal(t, "task.created", events[0].EventType)
+}
+
+func TestSyncedProjectWriteIsProxied(t *testing.T) {
+	var received []string
+	fakePrimary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = append(received, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"id": "TL-002"})
+	}))
+	defer fakePrimary.Close()
+
+	_, svc, st := newTestServer(t)
+
+	// Build a secondary-mode server with a fake-primary client.
+	cfg := syncsrv.ClientConfig{
+		PrimaryURL: fakePrimary.URL,
+		APIToken:   "tok",
+	}
+	client := syncsrv.NewClient(cfg, st)
+	srv := api.New(svc, st, "test-secret", syncsrv.ModeSecondary, client)
+
+	require.NoError(t, svc.CreateProject("TL", "TestLog", ""))
+	require.NoError(t, st.SetSyncOrigin("TL", fakePrimary.URL))
+
+	token := loginTestUser(t, srv, svc)
+	body := `{"project_id":"TL","title":"proxied"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+	assert.Contains(t, received, "POST /api/tasks")
+
+	// Proxy must not write the task to the local DB.
+	tasks, err := st.ReadChanges("TL", 0)
+	require.NoError(t, err)
+	assert.Empty(t, tasks, "proxy must not write task to local change_log")
 }
 
 func TestSyncHeartbeatRequiresAuth(t *testing.T) {

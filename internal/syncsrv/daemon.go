@@ -15,11 +15,13 @@ type Daemon struct {
 	cancel   context.CancelFunc
 }
 
-// NewDaemon creates a Daemon. st must implement SecondaryStore; rawStore is for entity upserts.
+// NewDaemon creates a Daemon. client is the shared Client instance (caller is responsible
+// for calling client.Start() before or after NewDaemon — the daemon does not start it).
+// st must implement SecondaryStore; rawStore is for entity upserts.
 // Passing the same *store.Store for both is fine — it implements all needed interfaces.
-func NewDaemon(cfg ClientConfig, st SecondaryStore, rawStore domain.Store) *Daemon {
+func NewDaemon(client *Client, st SecondaryStore, rawStore domain.Store) *Daemon {
 	return &Daemon{
-		client:   NewClient(cfg, st),
+		client:   client,
 		store:    st,
 		rawStore: rawStore,
 	}
@@ -28,7 +30,7 @@ func NewDaemon(cfg ClientConfig, st SecondaryStore, rawStore domain.Store) *Daem
 func (d *Daemon) Start(syncedProjects []string, startCursor int64) {
 	ctx, cancel := context.WithCancel(context.Background())
 	d.cancel = cancel
-	d.client.Start()
+	// Note: d.client.Start() is NOT called here — the caller starts the client heartbeat.
 	go d.client.ConsumeStream(ctx, syncedProjects, startCursor, d.applyEvent)
 }
 

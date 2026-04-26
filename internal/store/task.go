@@ -178,7 +178,30 @@ func (s *Store) SearchTasks(q string, limit int) ([]*domain.TaskSummary, error) 
 }
 
 func (s *Store) SearchTasksWithHint(q string, limit int, hintProjectID string) ([]*domain.TaskSummary, error) {
-	return nil, nil // stub — implemented in Task 2
+	like := "%" + q + "%"
+	rows, err := s.db.Query(
+		`SELECT id, title, project_id, status FROM tasks
+		 WHERE id LIKE ? OR title LIKE ?
+		 ORDER BY (project_id = ?) DESC, rowid ASC
+		 LIMIT ?`,
+		like, like, hintProjectID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*domain.TaskSummary
+	for rows.Next() {
+		var ts domain.TaskSummary
+		var status string
+		if err := rows.Scan(&ts.ID, &ts.Title, &ts.ProjectID, &status); err != nil {
+			return nil, err
+		}
+		ts.Status = domain.Status(status)
+		out = append(out, &ts)
+	}
+	return out, rows.Err()
 }
 
 func scanTask(r rowScanner) (*domain.Task, error) {

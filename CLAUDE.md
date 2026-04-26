@@ -29,10 +29,11 @@ internal/domain/    Pure types + service + Store interface (zero I/O, zero exter
 
 ## Key types
 
-- `domain.Task` — 18 fields including `SprintID *int64`, `Points *int`, `AssigneeID *string`, `PRNumber *int` (nullable pointers, not zero values)
+- `domain.Task` — 18 fields including `SprintID *int64`, `Points *int`, `AssigneeID *string`, `PRNumber *int` (nullable pointers, not zero values); also `BlockerDetails []*TaskSummary`, `BlockingDetails []*TaskSummary` (populated by `GetTask`, not `ListTasks`)
+- `domain.TaskSummary` — lightweight `{ID, Title, ProjectID, Status}` used for blocker search results and `GetTask` enrichment
 - `domain.Status` — string type: `backlog | todo | in_progress | review | done`; has `.Next()`, `.Prev()`, `.Label()`, `.Color()` methods
 - `domain.Priority` — string type: `low | medium | high | critical`; has `.Label()`, `.Color()` methods
-- `domain.Service` — business logic; wraps `domain.Store`; all mutations go through Service
+- `domain.Service` — business logic; wraps `domain.Store`; all mutations go through Service; has `SearchTasks(q, limit)` and `SearchTasksWithHint(q, limit, hintProjectID)` pass-throughs
 - `store.Store` — SQLite implementation; compile-time checked: `var _ domain.Store = (*Store)(nil)`
 
 ## Database
@@ -52,6 +53,7 @@ internal/domain/    Pure types + service + Store interface (zero I/O, zero exter
 - Exit codes: 0 success, 1 not-found, 2 validation error
 - Nullable int flags: use `cmd.Flags().Changed("points")` to distinguish "not provided" from `--points 0`
 - Error handling: `errors.Is(err, domain.ErrNotFound)` → `exitNotFound()`, everything else → return err
+- `task block <task-id> <blocker-id>` / `task unblock <task-id> <blocker-id>` — cross-project IDs work naturally (no project constraint at DB layer)
 
 ## TUI patterns
 
@@ -61,7 +63,9 @@ BubbleTea Elm architecture — value-type models, immutable updates:
 - Panel focus is `panelFocus int` on `App`; `syncFocus()` propagates to sub-models
 - All custom message types are unexported and defined in `internal/tui/msgs.go`
 - `taskMovedMsg` is defined in `board.go` (where drag-and-drop emits it)
-- Form overlays: `App.sprintForm *forms.SprintForm` (checked first) and `App.form *forms.TaskForm`; non-nil when open; all events route to active form first
+- Form overlays: `App.blockerPicker *forms.BlockerPicker` (checked first), `App.sprintForm *forms.SprintForm`, `App.form *forms.TaskForm`; non-nil when open; all events route to active overlay first in that order
+- Blocker picker: pressing Enter on the Blocks/BlockedBy field in the task form opens `forms.BlockerPicker` — a fuzzy-search overlay over `Service.SearchTasksWithHint`; same debounce pattern (version counter + `tea.Tick(300ms)`) as PR polling
+- `diffBlockers(oldIDs, newIDs []string) (toAdd, toRemove []string)` in `app.go` — pure helper; `doUpdateTask` uses it to reconcile dep changes via `svc.AddDep`/`svc.RemoveDep`
 - PR polling: 60-second `tea.Tick` in `Init()`, rescheduled each `tickMsg`
 - Mouse drag: `DragState` in `drag.go`; `computeSectionTops()` in `board.go` for hit-testing
 - `tea.WithMouseCellMotion()` is required for per-cell motion during drag

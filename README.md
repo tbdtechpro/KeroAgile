@@ -33,7 +33,7 @@ The MCP integration is the part that makes it genuinely different. When you add 
 - **Terminal TUI** — three-panel layout (sidebar, kanban board, task detail); keyboard + mouse; drag-and-drop between columns
 - **React web UI** — the same board in any browser; drag-and-drop, task modal, detail drawer, sprint sidebar, mobile-responsive
 - **Sprints** — create sprint phases, filter the board to a sprint, assign tasks, track per-sprint progress
-- **Blockers** — mark tasks as blocking/blocked-by; blocked tasks shown with ⚠ in both TUI and web UI
+- **Blockers** — mark tasks as blocking/blocked-by across projects; blocked tasks shown with ⚠; cross-project blockers display with project prefix and ↗ indicator in both TUI and web UI
 - **PR auto-close** — link a PR number to a task; when it merges, the task moves to `done` automatically
 - **Claude Code MCP** — 15 MCP tools covering every board operation; auto-detects project from git remote
 - **Smart assignee** — infers the right assignee from title keywords (no need to specify every time)
@@ -140,6 +140,8 @@ Press `enter` on a project in the sidebar to open its sprint list. Select a spri
 
 Press `b` on a selected task to open the blocker input. Type the blocking task's ID and press `enter`. The blocked task shows a red `⚠` prefix in the board. In the detail panel, press `→` to jump directly to the blocker task.
 
+When editing a task (`e`), tab to the **Blocks** or **Blocked by** field and press `enter` to open the fuzzy-search picker — type any part of a task ID or title and the picker filters across all projects live. Cross-project blockers are shown with a `[PROJECT]` prefix in the detail panel.
+
 ---
 
 ## Web UI
@@ -165,7 +167,7 @@ Then open `http://localhost:7432` in any browser and log in with your user ID an
 ### Features
 
 - **Kanban board** — same five columns as the TUI; drag tasks between columns (8px drag threshold prevents accidental moves)
-- **Task modal** — create and edit tasks from the board; title, description, priority, status, assignee, story points, labels, sprint
+- **Task modal** — create and edit tasks from the board; title, description, priority, status, assignee, story points, labels, sprint; live blocker autocomplete searches across all projects with cross-project chips (blue ↗ for other projects)
 - **Task detail drawer** — click any task card to open its full details on the right; blocked tasks shown with ⚠; two-click delete to prevent accidents
 - **Sprint sidebar** — filter by sprint, "no sprint", or all tasks; "My tasks" toggle filters to the logged-in user
 - **Toast notifications** — success/error feedback on all mutations (4-second auto-dismiss, click to dismiss early)
@@ -281,6 +283,8 @@ KeroAgile task get <task-id>
 KeroAgile task move <task-id> <status>
 KeroAgile task link-branch <task-id> <branch>
 KeroAgile task link-pr <task-id> <pr-number>
+KeroAgile task block <task-id> <blocker-id>    # mark task as blocked by blocker (cross-project IDs work)
+KeroAgile task unblock <task-id> <blocker-id>  # remove that blocker relationship
 KeroAgile task delete <task-id>
 
 KeroAgile sprint add <name> --project <id> [--start YYYY-MM-DD] [--end YYYY-MM-DD]

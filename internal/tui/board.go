@@ -35,6 +35,8 @@ type Board struct {
 
 	blockerInput  textinput.Model
 	blockerActive bool // true while the "block by" input bar is open
+
+	doneExpanded bool // when true, Done section shows all tasks instead of collapsing
 }
 
 func NewBoard(tasks []*domain.Task, width, height int) Board {
@@ -173,7 +175,7 @@ func (b Board) lineOfCursor() int {
 		tsks := tasksByStatus[st]
 		line++ // section header
 		line++ // divider
-		if st == domain.StatusDone && len(tsks) > 3 {
+		if st == domain.StatusDone && len(tsks) > 3 && !b.doneExpanded {
 			for _, t := range tsks {
 				if fi, ok := flatPos[t.ID]; ok && fi == b.cursor {
 					return line // point to the collapsed row
@@ -220,6 +222,19 @@ func (b Board) SetFocused(f bool) Board {
 func (b Board) SetSize(w, h int) Board {
 	b.width = w
 	b.height = h
+	inner := w - 2
+	// "/" + " " + input + "  esc·clear  enter·lock" (21)
+	if fw := inner - 24; fw > 1 {
+		b.filterInput.Width = fw
+	} else {
+		b.filterInput.Width = 1
+	}
+	// "⚠ block-by" (10) + "  " + input + "  esc·cancel  enter·add" (21)
+	if bw := inner - 35; bw > 1 {
+		b.blockerInput.Width = bw
+	} else {
+		b.blockerInput.Width = 1
+	}
 	return b
 }
 
@@ -336,6 +351,17 @@ func (b Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				b.blockerInput.Focus()
 				return b, textinput.Blink
 			}
+		case "z":
+			b.doneExpanded = !b.doneExpanded
+			return b, nil
+		case "right":
+			if len(b.flatIndex) > 0 {
+				t := b.displayTasks[b.flatIndex[b.cursor]]
+				if len(t.Blockers) > 0 {
+					target := t.Blockers[0]
+					return b, func() tea.Msg { return jumpToTaskMsg{taskID: target} }
+				}
+			}
 		case "up", "k":
 			if b.cursor > 0 {
 				b.cursor--
@@ -439,7 +465,7 @@ func (b Board) taskAtY(y int) int {
 		tsks := tasksByStatus[st]
 		row++ // header line
 		row++ // divider line
-		if st == domain.StatusDone && len(tsks) > 3 {
+		if st == domain.StatusDone && len(tsks) > 3 && !b.doneExpanded {
 			if y == row {
 				return -1 // collapsed line, not a selectable task
 			}
@@ -479,7 +505,7 @@ func (b Board) totalContentLines() int {
 		tsks := tasksByStatus[st]
 		n++ // header
 		n++ // divider
-		if st == domain.StatusDone && len(tsks) > 3 {
+		if st == domain.StatusDone && len(tsks) > 3 && !b.doneExpanded {
 			n++ // collapsed
 		} else {
 			n += len(tsks)
@@ -517,7 +543,7 @@ func (b Board) computeSectionTops() map[domain.Status]int {
 		row++          // header line
 		tops[st] = row // record at the header line itself (not one row before)
 		row++          // divider
-		if st == domain.StatusDone && len(tsks) > 3 {
+		if st == domain.StatusDone && len(tsks) > 3 && !b.doneExpanded {
 			row++ // collapsed line
 		} else {
 			row += len(tsks)
@@ -562,6 +588,15 @@ func (b Board) View() string {
 		flatPos[b.displayTasks[idx].ID] = fi
 	}
 
+	dividerLen := b.width - 2
+	if dividerLen > 31 {
+		dividerLen = 31
+	}
+	if dividerLen < 0 {
+		dividerLen = 0
+	}
+	divider := styles.Muted.Render(strings.Repeat("┄", dividerLen))
+
 	for _, st := range statusOrder {
 		tsks := tasksByStatus[st]
 		color := styles.StatusColor(string(st))
@@ -569,12 +604,10 @@ func (b Board) View() string {
 			fmt.Sprintf("◆ %s  (%d)", st.Label(), len(tsks)),
 		)
 		lines = append(lines, header)
-
-		divider := styles.Muted.Render("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄")
 		lines = append(lines, divider)
 
-		if st == domain.StatusDone && len(tsks) > 3 {
-			lines = append(lines, styles.Muted.Render(fmt.Sprintf("  %d tasks  ▸ collapsed", len(tsks))))
+		if st == domain.StatusDone && len(tsks) > 3 && !b.doneExpanded {
+			lines = append(lines, styles.Muted.Render(fmt.Sprintf("  %d tasks  ▸ collapsed  [z] expand", len(tsks))))
 		} else {
 			for _, t := range tsks {
 				isCursor := flatPos[t.ID] == b.cursor && b.focused
@@ -653,7 +686,7 @@ func (b Board) View() string {
 	panel := styles.PanelBorder(b.focused).
 		Width(b.width - 2).
 		Height(b.height - 2).
-		Render(content)
+		Render(strings.TrimRight(content, "\n"))
 	return panel
 }
 

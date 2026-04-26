@@ -3,6 +3,7 @@ package store_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -211,6 +212,41 @@ func TestDepReconciliation(t *testing.T) {
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{t3, t4}, blockers)
 	assert.NotContains(t, blockers, t2)
+}
+
+func TestGetTaskDepsExcludesDoneBlockers(t *testing.T) {
+	s := testStore(t)
+	require.NoError(t, s.CreateProject(&domain.Project{ID: "KA", Name: "KeroAgile"}))
+
+	seq1, _ := s.NextTaskSeq("KA")
+	blocker := fmt.Sprintf("KA-%03d", seq1)
+	seq2, _ := s.NextTaskSeq("KA")
+	blocked := fmt.Sprintf("KA-%03d", seq2)
+
+	require.NoError(t, s.CreateTask(&domain.Task{
+		ID: blocker, ProjectID: "KA", Title: "blocker",
+		Status: domain.StatusInProgress, Priority: domain.PriorityMedium,
+	}))
+	require.NoError(t, s.CreateTask(&domain.Task{
+		ID: blocked, ProjectID: "KA", Title: "blocked",
+		Status: domain.StatusBacklog, Priority: domain.PriorityMedium,
+	}))
+	require.NoError(t, s.AddDep(blocker, blocked))
+
+	// While the blocker is in_progress it should appear.
+	blockers, _, err := s.GetTaskDeps(blocked)
+	require.NoError(t, err)
+	assert.Contains(t, blockers, blocker)
+
+	// Mark the blocker as done — it should disappear from the active blockers list.
+	require.NoError(t, s.UpdateTask(&domain.Task{
+		ID: blocker, ProjectID: "KA", Title: "blocker",
+		Status: domain.StatusDone, Priority: domain.PriorityMedium,
+		UpdatedAt: time.Now().UTC(),
+	}))
+	blockers, _, err = s.GetTaskDeps(blocked)
+	require.NoError(t, err)
+	assert.Empty(t, blockers, "done blocker should not appear as active blocker")
 }
 
 func TestUserSyncOriginColumn(t *testing.T) {

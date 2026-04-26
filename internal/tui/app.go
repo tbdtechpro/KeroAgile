@@ -832,7 +832,7 @@ func (a App) View() string {
 		a.detail.View(),
 	)
 
-	statusText := "[n]ew  [e]dit  [m]ove  [d]del  [b]lock  [/]filter  [→]jump-blocker  [tab]focus  [r]refresh  [q]quit"
+	statusText := "[n]ew  [e]dit  [m]ove  [d]del  [b]lock  [/]filter  [→]jump-blocker  [z]done  [tab]focus  [r]refresh  [q]quit"
 	if a.statusMsg != "" && time.Now().Before(a.statusExpiry) {
 		statusText = a.statusMsg
 	}

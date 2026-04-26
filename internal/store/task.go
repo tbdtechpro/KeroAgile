@@ -161,7 +161,11 @@ func (s *Store) DeleteTask(id string) error {
 }
 
 func (s *Store) GetTaskDeps(taskID string) (blockers, blocking []string, err error) {
-	rows, err := s.db.Query(`SELECT blocker_id FROM task_deps WHERE blocked_id=?`, taskID)
+	// Only return blockers whose status is not 'done'; a done task is no longer an active block.
+	rows, err := s.db.Query(
+		`SELECT d.blocker_id FROM task_deps d
+		 JOIN tasks t ON t.id = d.blocker_id
+		 WHERE d.blocked_id = ? AND t.status != 'done'`, taskID)
 	if err != nil {
 		return nil, nil, err
 	}

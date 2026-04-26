@@ -122,7 +122,8 @@ The board has three panels: projects/sprints on the left, kanban columns in the 
 | `s` | Assign selected task to the active sprint filter |
 | `S` | Remove selected task from its sprint |
 | `b` | Open blocker input — type a task ID to mark this task as blocked by it |
-| `→` | In task detail: jump to the first blocker task |
+| `→` | Jump to the first active blocker of the selected task (works from board or detail panel) |
+| `z` | Toggle Done section expanded / collapsed |
 | `/` | Open filter bar — filter by title, status, priority, assignee, or label |
 | `d` | Delete selected task |
 | `r` | Refresh tasks + git |
@@ -138,7 +139,9 @@ Press `enter` on a project in the sidebar to open its sprint list. Select a spri
 
 ### Blocker workflow
 
-Press `b` on a selected task to open the blocker input. Type the blocking task's ID and press `enter`. The blocked task shows a red `⚠` prefix in the board. In the detail panel, press `→` to jump directly to the blocker task.
+Press `b` on a selected task to open the blocker input. Type the blocking task's ID and press `enter`. The blocked task shows a red `⚠` prefix in the board. Press `→` on any blocked task (board or detail panel) to jump directly to the blocker task.
+
+Tasks that are `done` are automatically removed from all blocker lists — the `⚠` clears as soon as the blocking task is completed, with no manual cleanup required.
 
 When editing a task (`e`), tab to the **Blocks** or **Blocked by** field and press `enter` to open the fuzzy-search picker — type any part of a task ID or title and the picker filters across all projects live. Cross-project blockers are shown with a `[PROJECT]` prefix in the detail panel.
 

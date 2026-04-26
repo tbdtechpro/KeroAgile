@@ -54,6 +54,7 @@ internal/domain/    Pure types + service + Store interface (zero I/O, zero exter
 - Nullable int flags: use `cmd.Flags().Changed("points")` to distinguish "not provided" from `--points 0`
 - Error handling: `errors.Is(err, domain.ErrNotFound)` → `exitNotFound()`, everything else → return err
 - `task block <task-id> <blocker-id>` / `task unblock <task-id> <blocker-id>` — cross-project IDs work naturally (no project constraint at DB layer)
+- `GetTaskDeps` filters the `blockers` direction via `JOIN tasks ON status != 'done'`; done tasks are not returned as active blockers anywhere (board ⚠ indicator, detail panel, edit form). The `blocking` direction (what I'm blocking) is unfiltered.
 
 ## TUI patterns
 
@@ -69,6 +70,11 @@ BubbleTea Elm architecture — value-type models, immutable updates:
 - PR polling: 60-second `tea.Tick` in `Init()`, rescheduled each `tickMsg`
 - Mouse drag: `DragState` in `drag.go`; `computeSectionTops()` in `board.go` for hit-testing
 - `tea.WithMouseCellMotion()` is required for per-cell motion during drag
+- `Board.doneExpanded bool` — `z` key toggles the Done section between collapsed (N tasks ▸ collapsed) and expanded; all four code paths that branch on done-collapse (`lineOfCursor`, `computeSectionTops`, `totalContentLines`, `View`) check `!b.doneExpanded`
+- Board `[→]` right-arrow handler is in `board.go` Update (not just `detail.go`); emits `jumpToTaskMsg{Blockers[0]}` so the key works when the board panel is focused
+- `Board.SetSize` scales `filterInput.Width` and `blockerInput.Width` to the available panel inner width so they cannot overflow the panel when opened at narrow terminal widths
+- Board `View()` divider is `strings.Repeat("┄", min(b.width-2, 31))` — dynamic so it never exceeds the panel inner width at narrow split-screen sizes
+- Board `View()` strips the trailing `"\n"` from `content` before calling `Render()` — prevents lipgloss `Height()` (which acts as min-height) from expanding the board panel 1 row beyond the sidebar and detail panels
 
 ## JSON output
 

@@ -162,15 +162,9 @@ func (d Detail) View() string {
 
 	if len(t.BlockingDetails) > 0 {
 		sb.WriteString("\n" + styles.Muted.Render("Blocking") + "\n")
-		if len(t.BlockingDetails) > 0 {
-			for _, bd := range t.BlockingDetails {
-				label := formatBlockerChip(bd, t.ProjectID)
-				sb.WriteString(styles.NormalRow.Render("► "+label) + "\n")
-			}
-		} else {
-			for _, b := range t.Blocking {
-				sb.WriteString(styles.NormalRow.Render("► "+b) + "\n")
-			}
+		for _, bd := range t.BlockingDetails {
+			label := formatBlockerChip(bd, t.ProjectID)
+			sb.WriteString(styles.NormalRow.Render("► "+label) + "\n")
 		}
 	}
 

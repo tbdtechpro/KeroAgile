@@ -146,10 +146,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Picker overlay takes priority when open
 	if a.blockerPicker != nil {
-		newPicker, cmd := a.blockerPicker.Update(msg)
-		bp := newPicker.(forms.BlockerPicker)
-		a.blockerPicker = &bp
-		return a, cmd
+		switch msg.(type) {
+		case forms.BlockerPickedMsg, forms.BlockerPickerCancelledMsg:
+			// fall through to main switch so the picker gets dismissed
+		default:
+			newPicker, cmd := a.blockerPicker.Update(msg)
+			bp := newPicker.(forms.BlockerPicker)
+			a.blockerPicker = &bp
+			return a, cmd
+		}
 	}
 
 	if a.sprintForm != nil {

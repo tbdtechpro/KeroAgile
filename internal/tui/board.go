@@ -582,18 +582,34 @@ func (b Board) View() string {
 
 				idStr := styles.Muted.Render(t.ID)
 				baseTitle := t.Title
-				truncLimit := b.width - 20
+
+				// Compute how many columns the title column can occupy so the
+				// full row fits within the panel inner width (b.width - 2).
+				// Row structure: 1 (cursor marker) + 2 (leading spaces) + titleCol +
+				// 2 (gap) + id + blockedPrefix = b.width - 2.
+				blockedPrefix := 0
 				if isBlocked {
-					truncLimit -= 2
+					blockedPrefix = 1 // ⚠ is rendered as a separate 1-col prefix
 				}
-				if r := []rune(baseTitle); b.width > 23 && len(r) > truncLimit-3 {
-					baseTitle = string(r[:truncLimit-3]) + "..."
+				titleCol := b.width - 2 - 1 - 2 - 2 - len(t.ID) - blockedPrefix
+				if titleCol < 1 {
+					titleCol = 1
+				}
+				if titleCol > 28 {
+					titleCol = 28 // preserve column alignment at normal widths
+				}
+				if r := []rune(baseTitle); len(r) > titleCol {
+					if titleCol > 3 {
+						baseTitle = string(r[:titleCol-3]) + "..."
+					} else {
+						baseTitle = string(r[:titleCol])
+					}
 				}
 				if b.drag.Active() && b.drag.TaskID == t.ID {
 					baseTitle = "░ " + baseTitle
 				}
 
-				row := fmt.Sprintf("  %-28s  %s", baseTitle, idStr)
+				row := fmt.Sprintf("  %-*s  %s", titleCol, baseTitle, idStr)
 				var rowLine string
 				if isCursor {
 					if isBlocked {

@@ -213,10 +213,7 @@ func truncate(s string, n int) string {
 // formatBlockerChip formats a TaskSummary for display in the detail panel.
 // Cross-project tasks are prefixed with [PROJECT].
 func formatBlockerChip(ts *domain.TaskSummary, currentProjectID string) string {
-	title := ts.Title
-	if len(title) > 40 {
-		title = title[:37] + "…"
-	}
+	title := truncate(ts.Title, 40)
 	if ts.ProjectID != currentProjectID {
 		return fmt.Sprintf("[%s] %s · %s", ts.ProjectID, ts.ID, title)
 	}

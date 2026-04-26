@@ -83,7 +83,6 @@ Never use `t.Fatal` inside a goroutine. Prefer `require.NoError` over `assert.No
 
 ## Known limitations
 
-- `doUpdateTask` in `app.go` does not persist Blocks/BlockedBy dep changes from the task form — tracked in roadmap §2.2
 - `Board.panelTop` is hardcoded to 2 in `relayout()`; if the header ever becomes multi-line the drag ghost Y will be off again
 
 ## Roadmap

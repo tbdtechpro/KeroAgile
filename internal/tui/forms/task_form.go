@@ -102,6 +102,7 @@ func New(projectID string, users []*domain.User, defaultID string, task *domain.
 	f.titleInput.Width = width - 10
 
 	f.descInput = textarea.New()
+	f.descInput.CharLimit = 0 // no limit — default 400 silently truncates long descriptions
 	f.descInput.Placeholder = "Description (optional)"
 	f.descInput.SetWidth(width - 10)
 	f.descInput.SetHeight(3)
@@ -191,6 +192,7 @@ func (f TaskForm) Init() tea.Cmd {
 
 func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -213,11 +215,11 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return f, func() tea.Msg { return f.buildSavedMsg() }
 		case "tab":
-			f = f.nextField()
-			return f, nil
+			f, cmd = f.nextField()
+			return f, cmd
 		case "shift+tab":
-			f = f.prevField()
-			return f, nil
+			f, cmd = f.prevField()
+			return f, cmd
 		case "left":
 			if f.focus == fieldAssignee {
 				f.assigneeIdx = (f.assigneeIdx - 1 + len(f.users) + 1) % (len(f.users) + 1)
@@ -247,7 +249,6 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	var cmd tea.Cmd
 	switch f.focus {
 	case fieldTitle:
 		f.titleInput, cmd = f.titleInput.Update(msg)
@@ -268,22 +269,20 @@ func (f TaskForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return f, tea.Batch(cmds...)
 }
 
-func (f TaskForm) nextField() TaskForm {
+func (f TaskForm) nextField() (TaskForm, tea.Cmd) {
 	f.blurAll()
 	f.focus = (f.focus + 1) % fieldCount
-	f.focusCurrent()
-	return f
+	return f, f.focusCurrent()
 }
 
-func (f TaskForm) prevField() TaskForm {
+func (f TaskForm) prevField() (TaskForm, tea.Cmd) {
 	f.blurAll()
 	if f.focus == 0 {
 		f.focus = fieldCount - 1
 	} else {
 		f.focus--
 	}
-	f.focusCurrent()
-	return f
+	return f, f.focusCurrent()
 }
 
 func (f *TaskForm) blurAll() {
@@ -296,29 +295,24 @@ func (f *TaskForm) blurAll() {
 	f.blockedByIn.Blur()
 }
 
-func (f *TaskForm) focusCurrent() {
+func (f *TaskForm) focusCurrent() tea.Cmd {
 	switch f.focus {
 	case fieldTitle:
-		f.titleInput.Focus()
+		return f.titleInput.Focus()
 	case fieldDesc:
-		f.descInput.Focus()
-	case fieldAssignee:
-		// cycling only — no textinput to focus
-	case fieldPriority:
-		// cycling only — no textinput to focus
+		return f.descInput.Focus()
 	case fieldPoints:
-		f.pointsInput.Focus()
-	case fieldStatus:
-		// cycling only — no textinput to focus
+		return f.pointsInput.Focus()
 	case fieldLabels:
-		f.labelsInput.Focus()
+		return f.labelsInput.Focus()
 	case fieldSprint:
-		f.sprintInput.Focus()
+		return f.sprintInput.Focus()
 	case fieldBlocks:
-		f.blocksInput.Focus()
+		return f.blocksInput.Focus()
 	case fieldBlockedBy:
-		f.blockedByIn.Focus()
+		return f.blockedByIn.Focus()
 	}
+	return nil // assignee, priority, status — cycling only
 }
 
 func (f TaskForm) validate() string {

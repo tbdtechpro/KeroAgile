@@ -170,12 +170,21 @@ func (s Sidebar) View() string {
 func (s Sidebar) viewProjList() string {
 	inner := styles.Muted.Render("PROJECTS") + "\n"
 
+	// Available width for the name itself: panel inner width minus the
+	// 2-column "▶ " (selected) or "  " (unselected) prefix, minus 2 for
+	// the panel border. We use the same budget for both row styles so the
+	// truncation column lines up between rows.
+	nameWidth := s.width - 4
+	if nameWidth < 1 {
+		nameWidth = 1
+	}
 	for i, p := range s.projects {
-		row := fmt.Sprintf("  %s", p.Name)
+		name := styles.TruncateRune(p.Name, nameWidth)
+		var row string
 		if i == s.cursor {
-			row = styles.SelectedRow.Render(fmt.Sprintf("▶ %s", p.Name))
+			row = styles.SelectedRow.Render(fmt.Sprintf("▶ %s", name))
 		} else {
-			row = styles.NormalRow.Render(row)
+			row = styles.NormalRow.Render(fmt.Sprintf("  %s", name))
 		}
 		inner += row + "\n"
 	}

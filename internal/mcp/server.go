@@ -62,6 +62,7 @@ func Dispatch(svc *domain.Service, req Request) *Response {
 			"protocolVersion": "2024-11-05",
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "keroagile", "version": "0.2.0"},
+			"instructions":    serverInstructions,
 		}
 	case "notifications/initialized":
 		return nil

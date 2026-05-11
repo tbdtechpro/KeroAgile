@@ -49,3 +49,26 @@ func TestSidebarShortProjectNameUnchanged(t *testing.T) {
 		t.Fatalf("short name was unexpectedly truncated; got:\n%s", out)
 	}
 }
+
+func TestSidebarSprintNameTruncation(t *testing.T) {
+	projects := []*domain.Project{{ID: "KA", Name: "KeroAgile"}}
+	counts := map[string]map[domain.Status]int{"KA": {}}
+	s := tui.NewSidebar(projects, counts, 14, 20) // narrow
+
+	summaries := []domain.SprintSummary{
+		{
+			Sprint:    &domain.Sprint{ID: 1, Name: "Long Sprint Name That Overflows", Status: domain.SprintActive},
+			TaskCount: 3,
+		},
+	}
+	s = s.SetSprints(summaries, true) // enter sprint-list mode
+	out := s.View()
+
+	if !strings.Contains(out, "…") {
+		t.Fatalf("expected ellipsis in sprint-list output; got:\n%s", out)
+	}
+	// Original full name must not appear (would mean no truncation).
+	if strings.Contains(out, "Long Sprint Name That Overflows") {
+		t.Fatalf("sprint name was not truncated; got:\n%s", out)
+	}
+}

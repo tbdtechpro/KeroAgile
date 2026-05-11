@@ -229,9 +229,18 @@ func (s Sidebar) viewSprintList() string {
 	}
 	inner += allRow + "\n"
 
+	// Available width for the sprint name itself. Budget breakdown:
+	//   2 cols panel border + 2 cols cursor/gutter prefix + 1 col icon
+	//   + 1 space + 2 spaces + up to 3 cols for task count = 11 cols overhead.
+	// Use s.width - 11 with a minimum of 1.
+	sprintNameWidth := s.width - 11
+	if sprintNameWidth < 1 {
+		sprintNameWidth = 1
+	}
 	for i, sum := range s.sprints {
 		icon, iconStyle := sprintIcon(sum.Sprint.Status)
-		nameStr := fmt.Sprintf("%s %s  %d", icon, sum.Sprint.Name, sum.TaskCount)
+		name := styles.TruncateRune(sum.Sprint.Name, sprintNameWidth)
+		nameStr := fmt.Sprintf("%s %s  %d", icon, name, sum.TaskCount)
 		var row string
 		if s.sprintCursor == i+1 {
 			row = styles.SelectedRow.Render("▶ " + iconStyle.Render(nameStr))

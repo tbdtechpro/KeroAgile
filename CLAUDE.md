@@ -91,6 +91,28 @@ All domain structs have `json:"snake_case"` tags. Field names in JSON output:
 
 Never use `t.Fatal` inside a goroutine. Prefer `require.NoError` over `assert.NoError` when the test cannot continue after failure.
 
+## Concepts that don't exist
+
+KeroAgile tasks are **flat within a project**. There is no concept of:
+
+- parent tasks
+- sub-tasks
+- epics
+- themes
+- "umbrella" tasks
+- hierarchical groupings of any kind
+
+Do not invent these relationships when planning or describing work. Tasks within a project are siblings.
+
+The only inter-task relationship is the **blocker DAG** (`task_deps` table), managed via the `add_blocker` / `remove_blocker` MCP tools or the `task block` / `task unblock` CLI commands. A blocker means "task A must reach `done` before task B can start" — it is a dependency, not a hierarchy.
+
+To group related work, use:
+
+- **shared labels** (free-form strings on each task), or
+- **shared sprint** (assign tasks to the same sprint via `assign_task_sprint` or the sidebar)
+
+This section is mirrored verbatim by `internal/mcp/instructions.go` so MCP clients see the same constraint at handshake time. Keep them in sync.
+
 ## Known limitations
 
 - `Board.panelTop` is hardcoded to 2 in `relayout()`; if the header ever becomes multi-line the drag ghost Y will be off again

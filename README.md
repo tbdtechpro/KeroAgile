@@ -1,16 +1,19 @@
 # KeroAgile
 
+[![CI](https://github.com/tbdtechpro/KeroAgile/actions/workflows/ci.yml/badge.svg)](https://github.com/tbdtechpro/KeroAgile/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/tbdtechpro/KeroAgile)](https://github.com/tbdtechpro/KeroAgile/releases/latest)
+
 A self-hostable agile board for your terminal and browser, with first-class Claude Code integration.
 
 ![KeroAgile board overview](docs/gifs/board-overview.gif)
-
-**License:** [BWL | AI-C2S | AI-T0](LICENSE) — Free for individuals and worker-owned organizations, including commercial use. Corporations may not use this software without explicit written permission from the copyright holders; the code may not be used to train AI models.
 
 KeroAgile gives you Jira-style project tracking (projects, sprints, tasks, assignees, blockers, PR auto-close) with zero cloud account and zero vendor lock-in. Everything stores in a single SQLite file. Run the keyboard-first TUI in your terminal, or open the React web UI in any browser on your network. The MCP integration means Claude Code can read your board, create tasks, move cards, and link branches in plain English — from inside any repo you're working in.
 
 ---
 
 > **Early release** — KeroAgile works well for personal projects and solo/small-team use. The core board, CLI, MCP server, API, and web UI are solid; test coverage is present but not exhaustive. Feedback and issues welcome.
+
+KeroAgile is a single Go binary. A pure-domain core (`domain`) sits under a pure-Go SQLite `store` (no CGo), and the TUI, CLI, MCP server, REST `api`, and embedded React web UI are all thin front-ends over the same service layer. See [Architecture](#architecture) for the package layout.
 
 ---
 
@@ -45,8 +48,8 @@ The MCP integration is the part that makes it genuinely different. When you add 
 
 ## Requirements
 
-- Go 1.21+ (to build from source)
-- Node.js 18+ (to build the web UI from source; not needed for release binaries)
+- Go 1.25+ (to build from source)
+- Node.js 20+ (to build the web UI from source; not needed for release binaries)
 - Optional: `git` for branch auto-link, `gh` for PR polling
 
 ## Install
@@ -375,6 +378,8 @@ KeroAgile serve --addr 0.0.0.0:7432
 # then open http://<server-ip>:7432 on any device
 ```
 
+The server speaks plain HTTP on `0.0.0.0:7432`. For anything beyond a trusted LAN, put a TLS reverse proxy in front of it.
+
 ### Database location
 
 The SQLite database lives at `~/.config/keroagile/keroagile.db` on whichever machine runs the binary. The `KEROAGILE_DATA_DIR` environment variable overrides this path — useful for Docker volumes or CI:
@@ -523,3 +528,7 @@ go vet ./...
 ```
 
 The React source lives in `web/`. `make build-full` compiles it and embeds the output into the Go binary via `//go:embed all:dist` in `internal/web/static.go`. Release binaries include the pre-built UI — Node.js is only needed when modifying the frontend.
+
+## License
+
+**License:** [BWL | AI-C2S | AI-T0](LICENSE) — Free for individuals and worker-owned organizations, including commercial use. Corporations may not use this software without explicit written permission from the copyright holders; the code may not be used to train AI models.

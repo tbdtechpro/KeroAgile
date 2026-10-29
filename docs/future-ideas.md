@@ -214,7 +214,7 @@ When a KeroAgile task is tagged as a research task, Claude queries content in
 KeroOle/KeroBooks and adds links to relevant ebook MD files in the task description.
 Surfaces reading material without manual cross-referencing.
 
-**KeroOle** exists at `/home/matt/github/KeroOle`. It currently downloads content from
+**KeroOle** exists at the `KeroOle` repo. It currently downloads content from
 O'Reilly Learning, logs it to a database, creates exports in multiple formats, and
 provides AI-ready context. Non-O'Reilly ebook parsing is planned. **KeroBooks** is a
 planned fork with the DB/export/context pipeline but without the O'Reilly-specific

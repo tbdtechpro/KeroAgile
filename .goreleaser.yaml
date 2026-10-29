@@ -3,6 +3,8 @@ version: 2
 before:
   hooks:
     - go mod tidy
+    - sh -c "cd web && npm ci"
+    - make build-web
 
 builds:
   - id: keroagile

@@ -12,14 +12,24 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ["1.24", "1.25"]
+        go: ["1.25"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # internal/web/dist is gitignored; go:embed needs it before vet/test/build
+      - name: Build web UI
+        run: (cd web && npm ci) && make build-web
 
       - name: Download modules
         run: go mod download

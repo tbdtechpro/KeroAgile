@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tbdtechpro/KeroAgile/internal/api"
@@ -102,7 +103,8 @@ Configuration:
 		mux.Handle("/", spaHandler(webstatic.FS()))
 
 		log.Printf("KeroAgile listening on http://%s", addr)
-		return http.ListenAndServe(addr, mux)
+		srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		return srv.ListenAndServe()
 	},
 }
 

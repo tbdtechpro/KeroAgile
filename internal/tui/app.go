@@ -52,6 +52,15 @@ type App struct {
 
 	spinner spinner.Model
 	loading bool
+
+	pendingDelete *pendingDelete
+}
+
+// pendingDelete is a delete that waits for the user to confirm it with y.
+type pendingDelete struct {
+	taskID    string
+	title     string
+	projectID string
 }
 
 // New creates the App. Call Run() to start the BubbleTea event loop.
@@ -185,6 +194,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.form = &f
 			return a, cmd
 		}
+	}
+
+	if key, ok := msg.(tea.KeyMsg); ok && a.pendingDelete != nil {
+		return a.answerDeleteConfirm(key)
 	}
 
 	switch msg := msg.(type) {
@@ -431,10 +444,14 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 			}
 		}
 	case "d":
-		// Fix 8: wrap DeleteTask in cmd
+		// Deleting is permanent and d works from any panel, so the cursor may
+		// be on a ticket the user cannot see. Name it and wait for y.
 		if id := a.board.SelectedTaskID(); id != "" {
-			pid := a.sidebar.SelectedProjectID()
-			cmds = append(cmds, a.doDeleteTask(id, pid))
+			a.pendingDelete = &pendingDelete{
+				taskID:    id,
+				title:     a.cachedTitle(id),
+				projectID: a.sidebar.SelectedProjectID(),
+			}
 		}
 	case "r":
 		pid := a.sidebar.SelectedProjectID()
@@ -480,6 +497,41 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 		})
 	}
 	return cmds
+}
+
+// answerDeleteConfirm resolves a pending delete: y deletes, any other key
+// cancels. Either way the key is used up and reaches nothing else.
+func (a App) answerDeleteConfirm(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	p := a.pendingDelete
+	a.pendingDelete = nil
+	if k := key.String(); k == "y" || k == "Y" {
+		return a, a.doDeleteTask(p.taskID, p.projectID)
+	}
+	a.setStatus("delete cancelled")
+	return a, nil
+}
+
+// deletePrompt is the status-bar question for a pending delete, with the
+// title shortened so the line stays on one row.
+func (a App) deletePrompt() string {
+	p := a.pendingDelete
+	head := "⚠ Delete " + p.taskID
+	tail := "?  [y] delete  ·  any other key cancels"
+	room := a.width - lipgloss.Width(head) - lipgloss.Width(tail) - 6
+	if room < 4 {
+		return head + tail
+	}
+	return head + ` "` + styles.TruncateRune(p.title, room) + `"` + tail
+}
+
+// cachedTitle returns the title of a ticket on the current board.
+func (a *App) cachedTitle(id string) string {
+	for _, t := range a.currentTasks {
+		if t.ID == id {
+			return t.Title
+		}
+	}
+	return ""
 }
 
 func (a *App) handleMouse(msg tea.MouseMsg) []tea.Cmd {
@@ -839,6 +891,9 @@ func (a App) View() string {
 	statusText := "[n]ew  [e]dit  [m]ove  [d]del  [b]lock  [/]filter  [→]jump-blocker  [z]done  [tab]focus  [r]refresh  [q]quit"
 	if a.statusMsg != "" && time.Now().Before(a.statusExpiry) {
 		statusText = a.statusMsg
+	}
+	if a.pendingDelete != nil {
+		statusText = a.deletePrompt()
 	}
 	statusBar := styles.StatusBar.Width(a.width).Render(statusText)
 

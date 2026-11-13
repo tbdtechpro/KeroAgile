@@ -60,8 +60,10 @@ func (b Board) SetTasks(tasks []*domain.Task) Board {
 
 // rebuildDisplay filters b.tasks using the current query and rebuilds flatIndex.
 func (b Board) rebuildDisplay() Board {
+	// The query applies whether the bar is open or the filter is locked
+	// (bar closed with Enter); only an empty query shows everything.
 	query := strings.TrimSpace(b.filterInput.Value())
-	if !b.filterActive || query == "" {
+	if query == "" {
 		b.displayTasks = b.tasks
 	} else {
 		b.displayTasks = nil
@@ -214,6 +216,10 @@ func (b Board) clampScroll() Board {
 	return b
 }
 
+// CapturingText reports whether the filter or block-by bar is open and
+// taking key presses as text.
+func (b Board) CapturingText() bool { return b.filterActive || b.blockerActive }
+
 func (b Board) SetFocused(f bool) Board {
 	b.focused = f
 	return b
@@ -350,6 +356,12 @@ func (b Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				b.blockerActive = true
 				b.blockerInput.Focus()
 				return b, textinput.Blink
+			}
+		case "esc":
+			// Clears a locked filter, as its indicator says.
+			if strings.TrimSpace(b.filterInput.Value()) != "" {
+				b.filterInput.SetValue("")
+				return b.rebuildDisplay(), nil
 			}
 		case "z":
 			b.doneExpanded = !b.doneExpanded

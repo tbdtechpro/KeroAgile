@@ -72,6 +72,8 @@ func New(svc *domain.Service, defaultAssignee string) *App {
 		gitClients:      make(map[string]*git.Client),
 		spinner:         sp,
 		defaultAssignee: defaultAssignee,
+		// A zero-value Board has unbuilt text inputs, which panic on Focus.
+		board: NewBoard(nil, 0, 0),
 	}
 }
 
@@ -207,7 +209,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.relayout()
 
 	case tea.KeyMsg:
-		cmds = append(cmds, a.handleKey(msg)...)
+		// While the board's filter or block-by bar is open, keys are text for
+		// that bar, not hotkeys: typing "done" must not delete, open a form
+		// or quit. Only ctrl+c keeps its meaning.
+		if !a.boardCapturingText() || msg.String() == "ctrl+c" {
+			cmds = append(cmds, a.handleKey(msg)...)
+		}
 
 	case tea.MouseMsg:
 		cmds = append(cmds, a.handleMouse(msg)...)
@@ -546,6 +553,12 @@ func (a *App) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 		a.syncFocus()
 	}
 	return nil
+}
+
+// boardCapturingText reports whether key presses are currently text for one
+// of the board's input bars.
+func (a *App) boardCapturingText() bool {
+	return a.focus == focusBoard && a.board.CapturingText()
 }
 
 func (a *App) syncFocus() {

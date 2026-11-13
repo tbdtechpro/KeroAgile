@@ -140,3 +140,5 @@ All planned future work is documented in `docs/roadmap.md`. Key upcoming phases:
 default_project  = "KA"
 default_assignee = "matt"
 ```
+
+The same file holds `api_secret` (signs web sessions), `remote_url` / `remote_token` and the `[sync]` table. `config.Save` writes it with mode 0600. `KeroAgile init` changes only the two defaults above and must preserve everything else.

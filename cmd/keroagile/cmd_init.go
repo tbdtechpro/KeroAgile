@@ -85,9 +85,12 @@ var initCmd = &cobra.Command{
 			}
 		}
 
-		cfg = &config.Config{
-			DefaultAssignee: id,
-			DefaultProject:  project,
+		// Change only what init asks about. The rest of the file (the signing
+		// secret, remote and sync settings) must survive a re-run, and a
+		// skipped project prompt keeps the current default.
+		cfg.DefaultAssignee = id
+		if project != "" {
+			cfg.DefaultProject = project
 		}
 		if err := config.Save(cfg); err != nil {
 			return fmt.Errorf("saving config: %w", err)

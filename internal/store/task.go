@@ -346,3 +346,111 @@ func nullableStr(v *string) sql.NullString {
 	}
 	return sql.NullString{String: *v, Valid: true}
 }
+
+// taskColumns lists a ticket's columns in the order scanTask reads them.
+const taskColumns = `id,project_id,sprint_id,title,description,status,priority,
+	 points,assignee_id,branch,pr_number,pr_merged,labels,created_at,updated_at`
+
+// likeEscaper makes text literal inside a LIKE pattern whose escape character
+// is a backslash, so a search for "100%" does not treat % as a wildcard.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// FindTasks returns the tickets matching q, at most q.Limit of them, and how
+// many match in all. Every filter is optional and they combine with AND.
+func (s *Store) FindTasks(q domain.TaskQuery) ([]*domain.Task, int, error) {
+	var where []string
+	var args []any
+	contains := "%" + likeEscaper.Replace(q.Text) + "%"
+
+	if q.Text != "" {
+		where = append(where, `(id LIKE ? ESCAPE '\' OR title LIKE ? ESCAPE '\' OR description LIKE ? ESCAPE '\')`)
+		args = append(args, contains, contains, contains)
+	}
+	if q.ProjectID != "" {
+		where = append(where, `project_id = ?`)
+		args = append(args, q.ProjectID)
+	}
+	if len(q.Statuses) > 0 {
+		marks := strings.TrimSuffix(strings.Repeat("?,", len(q.Statuses)), ",")
+		where = append(where, `status IN (`+marks+`)`)
+		for _, st := range q.Statuses {
+			args = append(args, string(st))
+		}
+	}
+	if q.AssigneeID != "" {
+		where = append(where, `assignee_id = ?`)
+		args = append(args, q.AssigneeID)
+	}
+	if q.Label != "" {
+		// Labels are stored joined by commas. Wrapping both sides in commas
+		// matches whole labels only ("tui" is not found in "tuist"); the
+		// replace tolerates labels entered as "a, b".
+		where = append(where, `(',' || replace(labels, ', ', ',') || ',') LIKE ? ESCAPE '\'`)
+		args = append(args, "%,"+likeEscaper.Replace(q.Label)+",%")
+	}
+	if q.SprintID != nil {
+		where = append(where, `sprint_id = ?`)
+		args = append(args, *q.SprintID)
+	}
+	cond := "1=1"
+	if len(where) > 0 {
+		cond = strings.Join(where, " AND ")
+	}
+
+	var total int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE `+cond, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// A text search ranks an exact ID first, then title matches, then
+	// description matches, most recently changed first. Without text, tickets
+	// come grouped by project, oldest first, as a board lists them.
+	order := `project_id, created_at, rowid`
+	if q.Text != "" {
+		order = `CASE WHEN id = ? COLLATE NOCASE THEN 0 WHEN title LIKE ? ESCAPE '\' THEN 1 ELSE 2 END, updated_at DESC, rowid DESC`
+		args = append(args, q.Text, contains)
+	}
+	query := `SELECT ` + taskColumns + ` FROM tasks WHERE ` + cond + ` ORDER BY ` + order
+	if q.Limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, q.Limit)
+	}
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var out []*domain.Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, t)
+	}
+	return out, total, rows.Err()
+}
+
+// TaskCounts returns the number of tickets per project and status. A project
+// with no tickets has no entry.
+func (s *Store) TaskCounts() (map[string]map[domain.Status]int, error) {
+	rows, err := s.db.Query(`SELECT project_id, status, COUNT(*) FROM tasks GROUP BY project_id, status`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]map[domain.Status]int)
+	for rows.Next() {
+		var project, status string
+		var n int
+		if err := rows.Scan(&project, &status, &n); err != nil {
+			return nil, err
+		}
+		if out[project] == nil {
+			out[project] = make(map[domain.Status]int)
+		}
+		out[project][domain.Status(status)] = n
+	}
+	return out, rows.Err()
+}

@@ -120,7 +120,7 @@ func TestToolsListCount(t *testing.T) {
 	require.Nil(t, resp.Error)
 	tools, ok := resp.Result.(map[string]any)["tools"]
 	require.True(t, ok)
-	require.Len(t, tools, 15)
+	require.Len(t, tools, 16) // 15 plus search_tasks
 }
 
 func TestRPCDispatch(t *testing.T) {

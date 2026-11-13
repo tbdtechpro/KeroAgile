@@ -222,3 +222,42 @@ func TestEveryProjectLookupIgnoresLetterCase(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, project.SprintMode)
 }
+
+func TestFindTasksChecksItsFilters(t *testing.T) {
+	svc, _ := boardWith(t, "a ticket")
+
+	_, _, err := svc.FindTasks(domain.TaskQuery{Statuses: []domain.Status{"doing"}})
+	require.ErrorIs(t, err, domain.ErrInvalid)
+
+	_, _, err = svc.FindTasks(domain.TaskQuery{ProjectID: "NOPE"})
+	require.ErrorIs(t, err, domain.ErrNotFound)
+
+	_, _, err = svc.FindTasks(domain.TaskQuery{AssigneeID: "nobody"})
+	require.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestFindTasksResolvesTheProjectInAnyLetterCase(t *testing.T) {
+	svc, m := boardWith(t, "a ticket")
+
+	_, _, err := svc.FindTasks(domain.TaskQuery{ProjectID: "ka", Text: "  ticket  "})
+
+	require.NoError(t, err)
+	assert.Equal(t, "KA", m.lastQuery.ProjectID)
+	assert.Equal(t, "ticket", m.lastQuery.Text, "surrounding spaces are not part of the search")
+}
+
+func TestFindTasksFillsInWhatBlocksEachTicket(t *testing.T) {
+	svc, _ := boardWith(t, "first", "second")
+	require.NoError(t, svc.AddDep("KA-001", "KA-002"))
+
+	tasks, total, err := svc.FindTasks(domain.TaskQuery{ProjectID: "KA"})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, total)
+	byID := map[string]*domain.Task{}
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+	assert.Equal(t, []string{"KA-001"}, byID["KA-002"].Blockers)
+	assert.Equal(t, []string{"KA-002"}, byID["KA-001"].Blocking)
+}

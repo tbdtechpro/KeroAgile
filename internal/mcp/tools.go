@@ -31,7 +31,7 @@ func toolList() []toolDef {
 	return []toolDef{
 		{
 			Name:        "list_projects",
-			Description: "List all KeroAgile projects.",
+			Description: "List all KeroAgile projects, each with its open (not done) and total ticket counts.",
 			InputSchema: obj(map[string]any{}, nil),
 		},
 		{
@@ -41,10 +41,27 @@ func toolList() []toolDef {
 				"Auto-detects project_id from git remote if not provided.",
 			InputSchema: obj(map[string]any{
 				"project_id":  str("Project ID (auto-detected from git remote if omitted)"),
-				"status":      str("Filter by status: backlog|todo|in_progress|review|done"),
+				"status":      str("Filter by status: backlog|todo|in_progress|review|done, or open for everything not done"),
 				"assignee_id": str("Filter by assignee user ID"),
+				"label":       str("Only tickets carrying this label"),
+				"sprint_id":   map[string]any{"type": "integer", "description": "Only tickets in this sprint"},
 				"detail":      str("summary (default) or full. full adds each ticket's description and can be very large; prefer get_task"),
 				"limit":       map[string]any{"type": "integer", "description": "Most tickets to return (default 200, max 500). The reply says when the list was cut"},
+			}, nil),
+		},
+		{
+			Name: "search_tasks",
+			Description: "Find tickets across every project, or one, as compact summaries. " +
+				"query matches a ticket's ID, title or description. status, assignee_id and label narrow the result, and work without a query: " +
+				"status=in_progress with assignee_id lists that person's work in flight on every board; status=open with assignee_id lists everything they have left. " +
+				"Give at least one of query, status, assignee_id or label.",
+			InputSchema: obj(map[string]any{
+				"query":       str("Text to find in ticket IDs, titles and descriptions"),
+				"project_id":  str("Search one project only (default: every project)"),
+				"status":      str("backlog|todo|in_progress|review|done, or open for everything not done"),
+				"assignee_id": str("Only tickets assigned to this user ID"),
+				"label":       str("Only tickets carrying this label"),
+				"limit":       map[string]any{"type": "integer", "description": "Most tickets to return (default 50, max 200). The reply says when the list was cut"},
 			}, nil),
 		},
 		{
@@ -174,7 +191,21 @@ func toolList() []toolDef {
 const (
 	defaultListLimit = 200 // above the largest real project, so cuts are rare
 	maxListLimit     = 500
+
+	defaultSearchLimit = 50
+	maxSearchLimit     = 200
 )
+
+// projectRow is one project in list_projects.
+type projectRow struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Open       int    `json:"open"`  // tickets not done
+	Total      int    `json:"total"` // all tickets
+	RepoPath   string `json:"repo_path,omitempty"`
+	SprintMode bool   `json:"sprint_mode,omitempty"`
+	SyncOrigin string `json:"sync_origin,omitempty"`
+}
 
 // taskRow is one ticket in a listing: enough to pick and triage tickets and
 // to see what blocks what, without the description. get_task returns
@@ -220,27 +251,51 @@ func listDetail(v string) (full bool, err error) {
 	return false, fmt.Errorf("detail %q: use \"summary\" or \"full\"", v)
 }
 
-// listLimit reads the limit argument, falling back to the default and
-// capping at the maximum.
-func listLimit(v any) int {
+// listLimit reads the limit argument, falling back to def and capping at max.
+func listLimit(v any, def, max int) int {
 	n, ok := v.(float64)
 	if !ok || n < 1 {
-		return defaultListLimit
+		return def
 	}
-	return min(int(n), maxListLimit)
+	return min(int(n), max)
 }
 
-// listReply renders a listing of a project's tickets, cut to limit.
-func listReply(projectID string, tasks []*domain.Task, full bool, limit int) (string, error) {
-	reply := map[string]any{
-		"project_id": strings.ToUpper(projectID),
-		"total":      len(tasks),
+// statusFilter reads a status argument: one status, "open" for everything
+// not done, or empty for any status. A mistyped status is an error rather
+// than an empty result, which would read as "nothing in that state".
+func statusFilter(v string) ([]domain.Status, error) {
+	switch {
+	case v == "":
+		return nil, nil
+	case v == "open":
+		return []domain.Status{domain.StatusBacklog, domain.StatusTodo, domain.StatusInProgress, domain.StatusReview}, nil
+	case domain.Status(v).Valid():
+		return []domain.Status{domain.Status(v)}, nil
 	}
-	if len(tasks) > limit {
+	return nil, fmt.Errorf("status %q: use backlog, todo, in_progress, review or done, or open for everything not done", v)
+}
+
+// int64Arg reads an optional integer argument.
+func int64Arg(v any) *int64 {
+	n, ok := v.(float64)
+	if !ok {
+		return nil
+	}
+	id := int64(n)
+	return &id
+}
+
+// listReply renders tickets found by FindTasks: total is how many matched,
+// tasks the ones returned. When some were left out it says so and adds
+// narrowHint, the tool's advice on getting a shorter list.
+func listReply(projectID string, tasks []*domain.Task, total int, full bool, narrowHint string) (string, error) {
+	reply := map[string]any{"total": total}
+	if projectID != "" {
+		reply["project_id"] = strings.ToUpper(projectID)
+	}
+	if total > len(tasks) {
 		reply["truncated"] = true
-		reply["hint"] = fmt.Sprintf("%d more not shown: narrow with status or assignee_id, or raise limit (max %d)",
-			len(tasks)-limit, maxListLimit)
-		tasks = tasks[:limit]
+		reply["hint"] = fmt.Sprintf("%d more not shown: %s", total-len(tasks), narrowHint)
 	}
 	reply["returned"] = len(tasks)
 	if full {
@@ -277,7 +332,21 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if err != nil {
 			return "", err
 		}
-		return toJSON(projects)
+		counts, err := svc.TaskCounts()
+		if err != nil {
+			return "", err
+		}
+		rows := make([]projectRow, len(projects))
+		for i, p := range projects {
+			rows[i] = projectRow{ID: p.ID, Name: p.Name, RepoPath: p.RepoPath, SprintMode: p.SprintMode, SyncOrigin: p.SyncOrigin}
+			for status, n := range counts[p.ID] {
+				rows[i].Total += n
+				if status != domain.StatusDone {
+					rows[i].Open += n
+				}
+			}
+		}
+		return compactJSON(map[string]any{"total": len(rows), "projects": rows})
 
 	case "list_tasks":
 		pid := str("project_id")
@@ -287,23 +356,51 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if pid == "" {
 			return "", errors.New("project_id required — provide it or run `KeroAgile project add --repo <remote-url>` to enable auto-detection")
 		}
-		filters := domain.TaskFilters{}
-		if s := str("status"); s != "" {
-			st := domain.Status(s)
-			filters.Status = &st
-		}
-		if a := str("assignee_id"); a != "" {
-			filters.AssigneeID = &a
-		}
-		detail, err := listDetail(str("detail"))
+		statuses, err := statusFilter(str("status"))
 		if err != nil {
 			return "", err
 		}
-		tasks, err := svc.ListTasks(pid, filters)
+		full, err := listDetail(str("detail"))
 		if err != nil {
 			return "", err
 		}
-		return listReply(pid, tasks, detail, listLimit(args["limit"]))
+		tasks, total, err := svc.FindTasks(domain.TaskQuery{
+			ProjectID:  pid,
+			Statuses:   statuses,
+			AssigneeID: str("assignee_id"),
+			Label:      str("label"),
+			SprintID:   int64Arg(args["sprint_id"]),
+			Limit:      listLimit(args["limit"], defaultListLimit, maxListLimit),
+		})
+		if err != nil {
+			return "", err
+		}
+		hint := fmt.Sprintf("narrow with status, assignee_id, label or sprint_id, or raise limit (max %d)", maxListLimit)
+		return listReply(pid, tasks, total, full, hint)
+
+	case "search_tasks":
+		statuses, err := statusFilter(str("status"))
+		if err != nil {
+			return "", err
+		}
+		q := domain.TaskQuery{
+			Text:       str("query"),
+			ProjectID:  str("project_id"),
+			Statuses:   statuses,
+			AssigneeID: str("assignee_id"),
+			Label:      str("label"),
+			Limit:      listLimit(args["limit"], defaultSearchLimit, maxSearchLimit),
+		}
+		if q.Text == "" && len(q.Statuses) == 0 && q.AssigneeID == "" && q.Label == "" {
+			// Otherwise the answer is every ticket on the board.
+			return "", errors.New("give at least one of query, status, assignee_id or label; to list a whole project use list_tasks")
+		}
+		tasks, total, err := svc.FindTasks(q)
+		if err != nil {
+			return "", err
+		}
+		hint := fmt.Sprintf("make the search more specific, or raise limit (max %d)", maxSearchLimit)
+		return listReply(q.ProjectID, tasks, total, false, hint)
 
 	case "get_task":
 		tid := str("task_id")

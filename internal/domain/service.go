@@ -442,3 +442,45 @@ func (s *Service) GetActiveSprint(projectID string) (*Sprint, error) {
 func (s *Service) ListSprintsWithCounts(projectID string) ([]SprintSummary, error) {
 	return s.store.ListSprintsWithCounts(normID(projectID))
 }
+
+// FindTasks finds tickets across projects, or within one when q.ProjectID is
+// set. It returns at most q.Limit tickets, each with what blocks it and what
+// it blocks, and the number of tickets that match in all.
+func (s *Service) FindTasks(q TaskQuery) ([]*Task, int, error) {
+	q.Text = strings.TrimSpace(q.Text)
+	q.Label = strings.TrimSpace(q.Label)
+	for _, st := range q.Statuses {
+		if err := checkStatus(st); err != nil {
+			return nil, 0, err
+		}
+	}
+	if q.ProjectID != "" {
+		project, err := s.project(q.ProjectID)
+		if err != nil {
+			return nil, 0, err
+		}
+		q.ProjectID = project.ID
+	}
+	if err := s.checkAssignee(q.AssigneeID); err != nil {
+		return nil, 0, err
+	}
+
+	tasks, total, err := s.store.FindTasks(q)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, t := range tasks {
+		blockers, blocking, err := s.store.GetTaskDeps(t.ID)
+		if err != nil {
+			return nil, 0, err
+		}
+		t.Blockers = blockers
+		t.Blocking = blocking
+	}
+	return tasks, total, nil
+}
+
+// TaskCounts returns the number of tickets per project and status.
+func (s *Service) TaskCounts() (map[string]map[Status]int, error) {
+	return s.store.TaskCounts()
+}

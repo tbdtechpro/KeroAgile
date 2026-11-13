@@ -35,6 +35,7 @@ internal/domain/    Pure types + service + Store interface (zero I/O, zero exter
 - `domain.Priority` — string type: `low | medium | high | critical`; has `.Label()`, `.Color()` methods
 - `domain.Service` — business logic; wraps `domain.Store`; all mutations go through Service; has `SearchTasks(q, limit)` and `SearchTasksWithHint(q, limit, hintProjectID)` pass-throughs
 - Validation lives in `domain.Service` and nowhere else, so it holds for the TUI, CLI, MCP and HTTP alike: status and priority must be known values; a ticket cannot block itself and a blocker link that would close a cycle is refused; an unknown project, ticket, assignee or sprint is `ErrNotFound` naming what is missing; project and ticket IDs are accepted in any letter case; a sprint must belong to the ticket's project. Rule violations wrap `domain.ErrInvalid`
+- `domain.TaskQuery` — the one way to find tickets across projects: optional `Text` (ID, title or description), `ProjectID`, `Statuses`, `AssigneeID`, `Label`, `SprintID`, `Limit`. `Service.FindTasks(q)` returns the matching tickets (with blockers and blocking filled in) and the total that match; `Service.TaskCounts()` returns ticket counts per project and status
 - `store.Store` — SQLite implementation; compile-time checked: `var _ domain.Store = (*Store)(nil)`
 
 ## Database
@@ -91,7 +92,9 @@ All domain structs have `json:"snake_case"` tags. Field names in JSON output:
 ## MCP tools
 
 - `internal/mcp/tools.go` defines the tools; `CallTool` dispatches them over `domain.Service`
-- Listings (`list_tasks`, `get_sprint`) return one compact `taskRow` per ticket, without descriptions, as unindented JSON inside `{project_id, total, returned, tasks}`; when cut to `limit` (default 200, max 500) the reply adds `truncated` and a `hint`. `get_task` is the full view; `list_tasks` with `detail: "full"` includes descriptions
+- `list_tasks` (one project) and `search_tasks` (every project, or one) both go through `Service.FindTasks`, so their filters behave identically: `status` takes one status or `open` (everything not done), plus `assignee_id`, `label`, and for `list_tasks` `sprint_id`. `search_tasks` adds `query` and needs at least one criterion; with no query it is the cross-project view (for example `status=in_progress` with `assignee_id`). A mistyped status is an error, not an empty list
+- `list_projects` returns compact rows with `open` and `total` ticket counts
+- Listings (`list_tasks`, `search_tasks`, `get_sprint`) return one compact `taskRow` per ticket, without descriptions, as unindented JSON inside `{project_id, total, returned, tasks}`; when cut to `limit` (`list_tasks` default 200, max 500; `search_tasks` default 50, max 200) the reply adds `truncated` and a `hint`. `get_task` is the full view; `list_tasks` with `detail: "full"` includes descriptions
 - Keep listings small. MCP clients cap tool results (a 98-ticket project at 308,567 characters was refused), and whatever fits is paid for in the model's context on every call. A row must still carry what the `.claude/commands/keroagile-*.md` commands read: `blockers`, `blocking`, `branch`, `pr_number`, `assignee_id`, `points`
 
 ## Testing

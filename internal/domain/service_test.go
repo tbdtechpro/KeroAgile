@@ -18,6 +18,8 @@ type mockStore struct {
 	seqs     map[string]int
 	deps     map[string][]string // blocked_id -> []blocker_id
 	blocking map[string][]string // blocker_id -> []blocked_id
+
+	lastQuery domain.TaskQuery // the query FindTasks was last called with
 }
 
 func newMock() *mockStore {
@@ -123,6 +125,17 @@ func (m *mockStore) SearchTasksWithHint(q string, limit int, hintProjectID strin
 	}
 	return out, nil
 }
+func (m *mockStore) FindTasks(q domain.TaskQuery) ([]*domain.Task, int, error) {
+	m.lastQuery = q
+	var out []*domain.Task
+	for _, t := range m.tasks {
+		if q.ProjectID == "" || t.ProjectID == q.ProjectID {
+			out = append(out, t)
+		}
+	}
+	return out, len(out), nil
+}
+func (m *mockStore) TaskCounts() (map[string]map[domain.Status]int, error) { return nil, nil }
 func (m *mockStore) NextTaskSeq(projectID string) (int, error) {
 	m.seqs[projectID]++
 	return m.seqs[projectID], nil

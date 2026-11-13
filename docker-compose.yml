@@ -17,6 +17,18 @@ services:
 
   # Optional: browser-accessible TUI via ttyd (port 7433)
   # docker compose --profile browser up
+  #
+  # Anyone who can open this port can read and edit the whole board, so by
+  # default it is published on this machine only. Settings (environment or
+  # a .env file next to this one):
+  #
+  #   KEROAGILE_TTYD_BIND=0.0.0.0             publish on every interface
+  #   KEROAGILE_TTYD_CREDENTIAL=user:password require a login in the browser
+  #   KEROAGILE_TTYD_PORT=7433                host port
+  #   KEROAGILE_TTYD_MAX_CLIENTS=2            limit simultaneous sessions
+  #
+  # If you publish it beyond this machine, set a credential unless your
+  # network already restricts who can reach it.
   keroagile-browser:
     build:
       context: .
@@ -25,10 +37,12 @@ services:
     profiles: ["browser"]
     environment:
       KEROAGILE_DATA_DIR: /data
+      TTYD_CREDENTIAL: ${KEROAGILE_TTYD_CREDENTIAL:-}
+      TTYD_MAX_CLIENTS: ${KEROAGILE_TTYD_MAX_CLIENTS:-}
     volumes:
       - keroagile-data:/data
     ports:
-      - "7433:7433"
+      - "${KEROAGILE_TTYD_BIND:-127.0.0.1}:${KEROAGILE_TTYD_PORT:-7433}:7433"
     restart: unless-stopped
 
 volumes:

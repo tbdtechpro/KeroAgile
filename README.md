@@ -415,13 +415,24 @@ services:
       - keroagile-data:/data
 ```
 
-**TUI in the browser** — `Dockerfile.ttyd` wraps the TUI with [ttyd](https://github.com/tsl0922/ttyd), exposing a fully interactive terminal at `http://homelab:7433`. No JavaScript, no frontend:
+**TUI in the browser** — `Dockerfile.ttyd` wraps the TUI with [ttyd](https://github.com/tsl0922/ttyd), serving a fully interactive terminal on port 7433. No JavaScript, no frontend:
 
 ```bash
 # Start the browser-accessible TUI (alongside the main service)
 docker compose --profile browser up keroagile-browser
 # then open http://localhost:7433
 ```
+
+Anyone who can open that port can read and edit the whole board, and the web UI's login does not cover it. By default it is published on the local machine only. To change that, set these in the environment or in a `.env` file next to `docker-compose.yml`:
+
+| Setting | Effect |
+|---|---|
+| `KEROAGILE_TTYD_BIND=0.0.0.0` | Publish on every network interface instead of `127.0.0.1` |
+| `KEROAGILE_TTYD_CREDENTIAL=user:password` | Require a login in the browser |
+| `KEROAGILE_TTYD_PORT=7433` | Host port |
+| `KEROAGILE_TTYD_MAX_CLIENTS=2` | Limit simultaneous sessions |
+
+If you publish it beyond the local machine, set a credential unless your network already restricts who can reach it. To reach a local-only terminal from another machine, use an SSH tunnel: `ssh -L 7433:localhost:7433 yourhost`.
 
 Both services share the same `keroagile-data` volume.
 

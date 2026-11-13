@@ -9,6 +9,11 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
+// ErrInvalid marks a request the board cannot accept as given: an unknown
+// status, a ticket blocking itself, and so on. Errors wrap it together with
+// the reason. Front ends report it as a validation error (CLI exit code 2).
+var ErrInvalid = errors.New("invalid")
+
 type TaskCreateOpts struct {
 	Priority   Priority
 	Status     Status
@@ -24,6 +29,100 @@ type Service struct {
 
 func NewService(store Store) *Service {
 	return &Service{store: store}
+}
+
+// The checks below are the one place the board's rules are enforced. Every
+// front end (TUI, CLI, MCP, HTTP) reaches the store through Service, so a rule
+// applied here holds for all of them.
+
+// normID puts a project or ticket ID in its stored form: upper case.
+func normID(id string) string { return strings.ToUpper(strings.TrimSpace(id)) }
+
+func checkStatus(st Status) error {
+	if st.Valid() {
+		return nil
+	}
+	return fmt.Errorf("%w status %q: use backlog, todo, in_progress, review or done", ErrInvalid, string(st))
+}
+
+func checkPriority(p Priority) error {
+	if p.Valid() {
+		return nil
+	}
+	return fmt.Errorf("%w priority %q: use low, medium, high or critical", ErrInvalid, string(p))
+}
+
+// project looks a project up by ID in any letter case.
+func (s *Service) project(id string) (*Project, error) {
+	p, err := s.store.GetProject(normID(id))
+	if errors.Is(err, ErrNotFound) {
+		return nil, fmt.Errorf("project %q: %w", normID(id), ErrNotFound)
+	}
+	return p, err
+}
+
+// task looks a ticket up by ID in any letter case.
+func (s *Service) task(id string) (*Task, error) {
+	t, err := s.store.GetTask(normID(id))
+	if errors.Is(err, ErrNotFound) {
+		return nil, fmt.Errorf("ticket %q: %w", normID(id), ErrNotFound)
+	}
+	return t, err
+}
+
+func (s *Service) checkAssignee(id string) error {
+	if id == "" {
+		return nil
+	}
+	if _, err := s.store.GetUser(id); errors.Is(err, ErrNotFound) {
+		return fmt.Errorf("assignee %q: %w", id, ErrNotFound)
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkSprint accepts no sprint, or a sprint that belongs to projectID.
+func (s *Service) checkSprint(projectID string, sprintID *int64) error {
+	if sprintID == nil {
+		return nil
+	}
+	sp, err := s.store.GetSprint(*sprintID)
+	if errors.Is(err, ErrNotFound) {
+		return fmt.Errorf("sprint %d: %w", *sprintID, ErrNotFound)
+	}
+	if err != nil {
+		return err
+	}
+	if sp.ProjectID != projectID {
+		return fmt.Errorf("%w sprint: sprint %d belongs to project %s, not %s", ErrInvalid, sp.ID, sp.ProjectID, projectID)
+	}
+	return nil
+}
+
+// blocks reports whether ticket from blocks ticket target, directly or
+// through a chain of other tickets.
+func (s *Service) blocks(from, target string) (bool, error) {
+	seen := map[string]bool{from: true}
+	queue := []string{from}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		_, blocking, err := s.store.GetTaskDeps(id)
+		if err != nil {
+			return false, err
+		}
+		for _, next := range blocking {
+			if next == target {
+				return true, nil
+			}
+			if !seen[next] {
+				seen[next] = true
+				queue = append(queue, next)
+			}
+		}
+	}
+	return false, nil
 }
 
 func (s *Service) CreateProject(id, name, repoPath string) error {
@@ -52,6 +151,33 @@ func (s *Service) SetSprintMode(projectID string, enabled bool) error {
 }
 
 func (s *Service) CreateTask(title, description, projectID string, opts TaskCreateOpts) (*Task, error) {
+	// Check everything before taking a ticket number, so a rejected request
+	// does not leave a gap in the sequence.
+	if strings.TrimSpace(title) == "" {
+		return nil, fmt.Errorf("%w ticket: a title is required", ErrInvalid)
+	}
+	if opts.Status != "" {
+		if err := checkStatus(opts.Status); err != nil {
+			return nil, err
+		}
+	}
+	if opts.Priority != "" {
+		if err := checkPriority(opts.Priority); err != nil {
+			return nil, err
+		}
+	}
+	project, err := s.project(projectID)
+	if err != nil {
+		return nil, err
+	}
+	projectID = project.ID
+	if err := s.checkAssignee(opts.AssigneeID); err != nil {
+		return nil, err
+	}
+	if err := s.checkSprint(projectID, opts.SprintID); err != nil {
+		return nil, err
+	}
+
 	seq, err := s.store.NextTaskSeq(projectID)
 	if err != nil {
 		return nil, err
@@ -85,7 +211,13 @@ func (s *Service) CreateTask(title, description, projectID string, opts TaskCrea
 }
 
 func (s *Service) ListTasks(projectID string, f TaskFilters) ([]*Task, error) {
-	tasks, err := s.store.ListTasks(projectID, f)
+	// An unknown project is an error, not an empty list: "no tickets" for a
+	// mistyped ID reads as "nothing to do".
+	project, err := s.project(projectID)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := s.store.ListTasks(project.ID, f)
 	if err != nil {
 		return nil, err
 	}
@@ -101,11 +233,11 @@ func (s *Service) ListTasks(projectID string, f TaskFilters) ([]*Task, error) {
 }
 
 func (s *Service) GetTask(id string) (*Task, error) {
-	t, err := s.store.GetTask(id)
+	t, err := s.task(id)
 	if err != nil {
 		return nil, err
 	}
-	blockers, blocking, err := s.store.GetTaskDeps(id)
+	blockers, blocking, err := s.store.GetTaskDeps(t.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +247,17 @@ func (s *Service) GetTask(id string) (*Task, error) {
 }
 
 func (s *Service) UpdateTask(t *Task) (*Task, error) {
+	if err := checkStatus(t.Status); err != nil {
+		return nil, err
+	}
+	if err := checkPriority(t.Priority); err != nil {
+		return nil, err
+	}
+	if t.AssigneeID != nil {
+		if err := s.checkAssignee(*t.AssigneeID); err != nil {
+			return nil, err
+		}
+	}
 	t.UpdatedAt = time.Now().UTC()
 	if err := s.store.UpdateTask(t); err != nil {
 		return nil, err
@@ -129,7 +272,10 @@ func (s *Service) UpdateTask(t *Task) (*Task, error) {
 }
 
 func (s *Service) MoveTask(id string, status Status) (*Task, error) {
-	t, err := s.store.GetTask(id)
+	if err := checkStatus(status); err != nil {
+		return nil, err
+	}
+	t, err := s.task(id)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +285,11 @@ func (s *Service) MoveTask(id string, status Status) (*Task, error) {
 }
 
 func (s *Service) DeleteTask(id string) error {
-	return s.store.DeleteTask(id)
+	t, err := s.task(id)
+	if err != nil {
+		return err
+	}
+	return s.store.DeleteTask(t.ID)
 }
 
 func (s *Service) TaskByBranch(branch string) (*Task, error) {
@@ -147,7 +297,7 @@ func (s *Service) TaskByBranch(branch string) (*Task, error) {
 }
 
 func (s *Service) LinkBranch(taskID, branch string) error {
-	t, err := s.store.GetTask(taskID)
+	t, err := s.task(taskID)
 	if err != nil {
 		return err
 	}
@@ -157,7 +307,7 @@ func (s *Service) LinkBranch(taskID, branch string) error {
 }
 
 func (s *Service) LinkPR(taskID string, prNumber int) error {
-	t, err := s.store.GetTask(taskID)
+	t, err := s.task(taskID)
 	if err != nil {
 		return err
 	}
@@ -167,7 +317,7 @@ func (s *Service) LinkPR(taskID string, prNumber int) error {
 }
 
 func (s *Service) MarkPRMerged(taskID string) error {
-	t, err := s.store.GetTask(taskID)
+	t, err := s.task(taskID)
 	if err != nil {
 		return err
 	}
@@ -178,8 +328,12 @@ func (s *Service) MarkPRMerged(taskID string) error {
 }
 
 func (s *Service) CreateSprint(name, projectID string, start, end *time.Time) (*Sprint, error) {
+	project, err := s.project(projectID)
+	if err != nil {
+		return nil, err
+	}
 	return s.store.CreateSprint(&Sprint{
-		ProjectID: projectID,
+		ProjectID: project.ID,
 		Name:      name,
 		StartDate: start,
 		EndDate:   end,
@@ -222,12 +376,34 @@ func (s *Service) SetUserPasswordHash(id, hash string) error {
 	return s.store.SetUserPassword(id, hash)
 }
 
+// AddDep records that blockerID must be done before blockedID can start.
+// The blocker graph stays acyclic: a ticket cannot block itself, and a new
+// link is refused when the two tickets would end up waiting on each other.
 func (s *Service) AddDep(blockerID, blockedID string) error {
-	return s.store.AddDep(blockerID, blockedID)
+	blocker, err := s.task(blockerID)
+	if err != nil {
+		return err
+	}
+	blocked, err := s.task(blockedID)
+	if err != nil {
+		return err
+	}
+	if blocker.ID == blocked.ID {
+		return fmt.Errorf("%w blocker: %s cannot block itself", ErrInvalid, blocker.ID)
+	}
+	loops, err := s.blocks(blocked.ID, blocker.ID)
+	if err != nil {
+		return err
+	}
+	if loops {
+		return fmt.Errorf("%w blocker: %s already blocks %s, directly or through other tickets, so the two would wait on each other",
+			ErrInvalid, blocked.ID, blocker.ID)
+	}
+	return s.store.AddDep(blocker.ID, blocked.ID)
 }
 
 func (s *Service) RemoveDep(blockerID, blockedID string) error {
-	return s.store.RemoveDep(blockerID, blockedID)
+	return s.store.RemoveDep(normID(blockerID), normID(blockedID))
 }
 
 func (s *Service) SearchTasks(q string, limit int) ([]*TaskSummary, error) {
@@ -241,8 +417,11 @@ func (s *Service) SearchTasksWithHint(q string, limit int, hintProjectID string)
 // AssignTaskToSprint sets or clears the sprint assignment for a task.
 // sprintID == nil clears the assignment.
 func (s *Service) AssignTaskToSprint(taskID string, sprintID *int64) (*Task, error) {
-	t, err := s.store.GetTask(taskID)
+	t, err := s.task(taskID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkSprint(t.ProjectID, sprintID); err != nil {
 		return nil, err
 	}
 	t.SprintID = sprintID

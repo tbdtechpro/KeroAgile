@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,7 +66,18 @@ func init() {
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+	os.Exit(exitCode(rootCmd.Execute()))
+}
+
+// exitCode maps a command's error to the documented exit codes: 2 when the
+// board rejects the request as invalid, 1 for not-found and anything else.
+func exitCode(err error) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, domain.ErrInvalid):
+		return 2
+	default:
+		return 1
 	}
 }

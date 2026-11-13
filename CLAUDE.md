@@ -34,6 +34,7 @@ internal/domain/    Pure types + service + Store interface (zero I/O, zero exter
 - `domain.Status` — string type: `backlog | todo | in_progress | review | done`; has `.Next()`, `.Prev()`, `.Label()`, `.Color()` methods
 - `domain.Priority` — string type: `low | medium | high | critical`; has `.Label()`, `.Color()` methods
 - `domain.Service` — business logic; wraps `domain.Store`; all mutations go through Service; has `SearchTasks(q, limit)` and `SearchTasksWithHint(q, limit, hintProjectID)` pass-throughs
+- Validation lives in `domain.Service` and nowhere else, so it holds for the TUI, CLI, MCP and HTTP alike: status and priority must be known values; a ticket cannot block itself and a blocker link that would close a cycle is refused; an unknown project, ticket, assignee or sprint is `ErrNotFound` naming what is missing; project and ticket IDs are accepted in any letter case; a sprint must belong to the ticket's project. Rule violations wrap `domain.ErrInvalid`
 - `store.Store` — SQLite implementation; compile-time checked: `var _ domain.Store = (*Store)(nil)`
 
 ## Database
@@ -52,7 +53,7 @@ internal/domain/    Pure types + service + Store interface (zero I/O, zero exter
 - `--json` flag or auto-detected non-TTY → `printJSON()` from `cmd/keroagile/output.go`
 - Exit codes: 0 success, 1 not-found, 2 validation error
 - Nullable int flags: use `cmd.Flags().Changed("points")` to distinguish "not provided" from `--points 0`
-- Error handling: `errors.Is(err, domain.ErrNotFound)` → `exitNotFound()`, everything else → return err
+- Error handling: `errors.Is(err, domain.ErrNotFound)` → `exitNotFound()`, everything else → return err; `main` turns a returned `domain.ErrInvalid` into exit code 2 via `exitCode()`
 - `task block <task-id> <blocker-id>` / `task unblock <task-id> <blocker-id>` — cross-project IDs work naturally (no project constraint at DB layer)
 - `GetTaskDeps` filters the `blockers` direction via `JOIN tasks ON status != 'done'`; done tasks are not returned as active blockers anywhere (board ⚠ indicator, detail panel, edit form). The `blocking` direction (what I'm blocking) is unfiltered.
 

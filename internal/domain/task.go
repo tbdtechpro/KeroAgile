@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 type Status string
 
@@ -15,6 +18,9 @@ const (
 var statusOrder = []Status{
 	StatusBacklog, StatusTodo, StatusInProgress, StatusReview, StatusDone,
 }
+
+// Valid reports whether s is one of the five statuses every board shows.
+func (s Status) Valid() bool { return slices.Contains(statusOrder, s) }
 
 func (s Status) Next() Status {
 	for i, st := range statusOrder {
@@ -58,6 +64,15 @@ const (
 	PriorityHigh     Priority = "high"
 	PriorityCritical Priority = "critical"
 )
+
+// Valid reports whether p is a known priority.
+func (p Priority) Valid() bool {
+	switch p {
+	case PriorityLow, PriorityMedium, PriorityHigh, PriorityCritical:
+		return true
+	}
+	return false
+}
 
 func (p Priority) Color() string {
 	switch p {

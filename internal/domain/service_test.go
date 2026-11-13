@@ -185,6 +185,8 @@ func (m *mockStore) SetUserPassword(id, hash string) error { return nil }
 func TestServiceCreateTask(t *testing.T) {
 	svc := domain.NewService(newMock())
 	require.NoError(t, svc.CreateProject("KA", "myapp", ""))
+	_, err := svc.CreateUser("claude", "Claude", true)
+	require.NoError(t, err)
 
 	task, err := svc.CreateTask("Fix login", "", "KA", domain.TaskCreateOpts{
 		Priority:   domain.PriorityHigh,
@@ -223,12 +225,13 @@ func TestAssignTaskToSprint(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, task.SprintID)
 
-	// Assign to sprint 1
-	sprintID := int64(1)
-	updated, err := svc.AssignTaskToSprint(task.ID, &sprintID)
+	// Assign to a sprint of the same project
+	sprint, err := svc.CreateSprint("Sprint 1", "KA", nil, nil)
+	require.NoError(t, err)
+	updated, err := svc.AssignTaskToSprint(task.ID, &sprint.ID)
 	require.NoError(t, err)
 	require.NotNil(t, updated.SprintID)
-	assert.Equal(t, int64(1), *updated.SprintID)
+	assert.Equal(t, sprint.ID, *updated.SprintID)
 
 	// Clear assignment
 	cleared, err := svc.AssignTaskToSprint(task.ID, nil)

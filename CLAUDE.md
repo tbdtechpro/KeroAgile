@@ -75,6 +75,10 @@ BubbleTea Elm architecture — value-type models, immutable updates:
 - `Board.SetSize` scales `filterInput.Width` and `blockerInput.Width` to the available panel inner width so they cannot overflow the panel when opened at narrow terminal widths
 - Board `View()` divider is `strings.Repeat("┄", min(b.width-2, 31))` — dynamic so it never exceeds the panel inner width at narrow split-screen sizes
 - Board `View()` strips the trailing `"\n"` from `content` before calling `Render()` — prevents lipgloss `Height()` (which acts as min-height) from expanding the board panel 1 row beyond the sidebar and detail panels
+- A panel taller than its allotted height makes `App.View()` taller than the terminal, and bubbletea then drops lines from the **top** of the screen (header and top borders vanish). Every panel must keep its content within `height - 2` lines itself
+- Sidebar lists scroll: `Sidebar.projScroll` / `sprintScroll` hold the first visible row. Each mode builds a `sidebarList{head, rows, foot}` (`projList()` / `sprintList()`), and `window()` is the single source of truth for which rows are on screen — `render`, `clampScroll`, `scrollBy` (mouse wheel) and `projectAtY` (click hit-testing) all call it, so they cannot disagree
+- Sidebar `render()` shows `↑ N` on the heading and `↓ N more` on the line under the list when rows are hidden, drops the footer (board summary / key hint) when it would leave fewer than `minListRows` rows, and finally wraps then cuts the content to `height - 2` lines as a guarantee
+- Sidebar click mapping: the first list row is at screen row `sidebarPanelTop` (2: header row + top border) plus the number of heading lines
 
 ## JSON output
 
@@ -115,7 +119,8 @@ This section is mirrored verbatim by `internal/mcp/instructions.go` so MCP clien
 
 ## Known limitations
 
-- `Board.panelTop` is hardcoded to 2 in `relayout()`; if the header ever becomes multi-line the drag ghost Y will be off again
+- `Board.panelTop` is hardcoded to 2 in `relayout()`; if the header ever becomes multi-line the drag ghost Y will be off again. `sidebarPanelTop` in `sidebar.go` makes the same assumption for click hit-testing
+- `Detail.View()` does not clip its content to the panel height. A task with many blockers on a short terminal (under about 25 rows) renders taller than the panel and pushes the top of the screen off, the same symptom the sidebar had
 
 ## Roadmap
 

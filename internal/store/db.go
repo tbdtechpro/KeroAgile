@@ -2,25 +2,49 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 
 	_ "modernc.org/sqlite"
 )
 
+// Open opens the database at path and brings its schema up to date.
+//
+// Many processes share this file: every MCP server, the TUI, the CLI and the
+// web server. The connection settings ride in the DSN so that every
+// connection the pool opens gets them, not only the first:
+//
+//   - busy_timeout: wait for another process's lock instead of failing at once
+//     with "database is locked"
+//   - foreign_keys: enforce references and ON DELETE CASCADE
+//   - journal_mode=WAL: a read in progress and a writer do not block each other
+//
+// WAL is a property of the file, so it persists, and builds from before this
+// change read and write a WAL database normally. It keeps two companion files
+// next to the database, "-wal" and "-shm".
 func Open(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", dsn(path))
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1) // SQLite is single-writer
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		return nil, err
-	}
 	if err := migrate(db); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return db, nil
+}
+
+// busyTimeoutMS is how long a connection waits for another process's lock.
+const busyTimeoutMS = 5000
+
+// dsn builds the SQLite URI for path. The driver applies busy_timeout before
+// the other pragmas, so the switch to WAL also waits its turn.
+func dsn(path string) string {
+	// In a URI filename ?, # and % have meaning and must be escaped.
+	escaped := strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23").Replace(path)
+	return fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)",
+		escaped, busyTimeoutMS)
 }
 
 func migrate(db *sql.DB) error {

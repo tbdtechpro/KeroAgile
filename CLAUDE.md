@@ -40,9 +40,9 @@ internal/domain/    Pure types + service + Store interface (zero I/O, zero exter
 
 - Path: `~/.config/keroagile/keroagile.db`
 - Pure Go SQLite via `modernc.org/sqlite` (no CGo, no system libsqlite3)
-- Single writer: `db.SetMaxOpenConns(1)`
+- Single writer per process: `db.SetMaxOpenConns(1)`. Many processes share the file (every `KeroAgile mcp`, the TUI, the CLI, `serve`), so `store.Open` puts its settings in the DSN, where every pooled connection gets them: `busy_timeout(5000)` (wait for another process's lock instead of failing with `database is locked`), `foreign_keys(1)`, `journal_mode(WAL)`
+- WAL keeps `keroagile.db-wal` and `keroagile.db-shm` next to the database. Back up with `sqlite3 <db> ".backup <dest>"`, never `cp`; when restoring a database file, move any `-wal`, `-shm` and `-journal` files aside first
 - Schema migrations: append-only in `internal/store/db.go` `schema` const; `migrate()` runs at startup
-- Foreign keys enabled via `PRAGMA foreign_keys = ON` at connection open
 - `task_deps` table has `ON DELETE CASCADE` — deleting a task removes its dependency rows
 - `NextTaskSeq` uses INSERT + conflict update for race-free sequence generation
 

@@ -137,12 +137,16 @@ func (s *Service) ListProjects() ([]*Project, error) {
 	return s.store.ListProjects()
 }
 
+// GetProject resolves id exactly as the mutating methods do (any letter
+// case). Callers use it to decide how to treat a write, such as the HTTP
+// layer's sync gate, so it must never disagree with them about which project
+// an ID names.
 func (s *Service) GetProject(id string) (*Project, error) {
-	return s.store.GetProject(id)
+	return s.project(id)
 }
 
 func (s *Service) SetSprintMode(projectID string, enabled bool) error {
-	p, err := s.store.GetProject(projectID)
+	p, err := s.project(projectID)
 	if err != nil {
 		return err
 	}
@@ -342,7 +346,7 @@ func (s *Service) CreateSprint(name, projectID string, start, end *time.Time) (*
 }
 
 func (s *Service) ListSprints(projectID string) ([]*Sprint, error) {
-	return s.store.ListSprints(projectID)
+	return s.store.ListSprints(normID(projectID))
 }
 
 func (s *Service) GetSprint(id int64) (*Sprint, error) {
@@ -432,9 +436,9 @@ func (s *Service) AssignTaskToSprint(taskID string, sprintID *int64) (*Task, err
 }
 
 func (s *Service) GetActiveSprint(projectID string) (*Sprint, error) {
-	return s.store.GetActiveSprint(projectID)
+	return s.store.GetActiveSprint(normID(projectID))
 }
 
 func (s *Service) ListSprintsWithCounts(projectID string) ([]SprintSummary, error) {
-	return s.store.ListSprintsWithCounts(projectID)
+	return s.store.ListSprintsWithCounts(normID(projectID))
 }

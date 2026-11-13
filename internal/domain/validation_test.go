@@ -206,3 +206,19 @@ func TestCreateSprintInAnUnknownProjectIsNotFound(t *testing.T) {
 
 	require.ErrorIs(t, err, domain.ErrNotFound)
 }
+
+// Every lookup must resolve a project ID the same way. A front end that
+// checks a project with one spelling and writes with another would be making
+// its decision about a different project than the one it changes.
+func TestEveryProjectLookupIgnoresLetterCase(t *testing.T) {
+	svc, _ := boardWith(t)
+
+	project, err := svc.GetProject("ka")
+	require.NoError(t, err)
+	assert.Equal(t, "KA", project.ID)
+
+	require.NoError(t, svc.SetSprintMode("ka", true))
+	project, err = svc.GetProject("KA")
+	require.NoError(t, err)
+	assert.True(t, project.SprintMode)
+}

@@ -88,6 +88,12 @@ All domain structs have `json:"snake_case"` tags. Field names in JSON output:
 - `Project`: `id`, `name`, `repo_path`, `sprint_mode`
 - `User`: `id`, `display_name`, `is_agent`
 
+## MCP tools
+
+- `internal/mcp/tools.go` defines the tools; `CallTool` dispatches them over `domain.Service`
+- Listings (`list_tasks`, `get_sprint`) return one compact `taskRow` per ticket, without descriptions, as unindented JSON inside `{project_id, total, returned, tasks}`; when cut to `limit` (default 200, max 500) the reply adds `truncated` and a `hint`. `get_task` is the full view; `list_tasks` with `detail: "full"` includes descriptions
+- Keep listings small. MCP clients cap tool results (a 98-ticket project at 308,567 characters was refused), and whatever fits is paid for in the model's context on every call. A row must still carry what the `.claude/commands/keroagile-*.md` commands read: `blockers`, `blocking`, `branch`, `pr_number`, `assignee_id`, `points`
+
 ## Testing
 
 - `internal/domain/` — `package domain_test`; tests use a `mockStore` with both `deps` and `blocking` reverse-index maps

@@ -35,12 +35,16 @@ func toolList() []toolDef {
 			InputSchema: obj(map[string]any{}, nil),
 		},
 		{
-			Name:        "list_tasks",
-			Description: "List tasks. Auto-detects project_id from git remote if not provided.",
+			Name: "list_tasks",
+			Description: "List a project's tickets as compact summaries: id, title, status, priority, assignee, points, labels, sprint, branch, PR, blockers, blocking, last update. " +
+				"Descriptions are left out; use get_task for one ticket in full, or detail=\"full\" to include them here. " +
+				"Auto-detects project_id from git remote if not provided.",
 			InputSchema: obj(map[string]any{
 				"project_id":  str("Project ID (auto-detected from git remote if omitted)"),
 				"status":      str("Filter by status: backlog|todo|in_progress|review|done"),
 				"assignee_id": str("Filter by assignee user ID"),
+				"detail":      str("summary (default) or full. full adds each ticket's description and can be very large; prefer get_task"),
+				"limit":       map[string]any{"type": "integer", "description": "Most tickets to return (default 200, max 500). The reply says when the list was cut"},
 			}, nil),
 		},
 		{
@@ -128,7 +132,7 @@ func toolList() []toolDef {
 		},
 		{
 			Name:        "get_sprint",
-			Description: "Get a sprint and its tasks. Pass sprint_id for a specific sprint, or omit to get the active sprint (project_id auto-detected from git remote).",
+			Description: "Get a sprint and its tickets as compact summaries (no descriptions; use get_task for one ticket in full). Pass sprint_id for a specific sprint, or omit to get the active sprint (project_id auto-detected from git remote).",
 			InputSchema: obj(map[string]any{
 				"sprint_id":  map[string]any{"type": "integer", "description": "Sprint ID (omit to get the active sprint)"},
 				"project_id": str("Project ID for active-sprint lookup (auto-detected if omitted)"),
@@ -159,6 +163,100 @@ func toolList() []toolDef {
 			}, []string{"task_id"}),
 		},
 	}
+}
+
+// A listing of a large project used to be several hundred kilobytes: every
+// ticket's full description, pretty-printed. MCP clients cap tool results (a
+// 98-ticket project was refused outright), and what does fit is paid for in
+// the model's context on every call. Listings therefore carry a summary row
+// per ticket, as compact JSON, and say so when they are cut short.
+
+const (
+	defaultListLimit = 200 // above the largest real project, so cuts are rare
+	maxListLimit     = 500
+)
+
+// taskRow is one ticket in a listing: enough to pick and triage tickets and
+// to see what blocks what, without the description. get_task returns
+// everything about one ticket.
+type taskRow struct {
+	ID         string          `json:"id"`
+	Title      string          `json:"title"`
+	Status     domain.Status   `json:"status"`
+	Priority   domain.Priority `json:"priority"`
+	AssigneeID *string         `json:"assignee_id,omitempty"`
+	Points     *int            `json:"points,omitempty"`
+	Labels     []string        `json:"labels,omitempty"`
+	SprintID   *int64          `json:"sprint_id,omitempty"`
+	Branch     string          `json:"branch,omitempty"`
+	PRNumber   *int            `json:"pr_number,omitempty"`
+	Blockers   []string        `json:"blockers,omitempty"`
+	Blocking   []string        `json:"blocking,omitempty"`
+	UpdatedAt  string          `json:"updated_at"` // date only
+}
+
+func rowsOf(tasks []*domain.Task) []taskRow {
+	rows := make([]taskRow, len(tasks))
+	for i, t := range tasks {
+		rows[i] = taskRow{
+			ID: t.ID, Title: t.Title, Status: t.Status, Priority: t.Priority,
+			AssigneeID: t.AssigneeID, Points: t.Points, Labels: t.Labels,
+			SprintID: t.SprintID, Branch: t.Branch, PRNumber: t.PRNumber,
+			Blockers: t.Blockers, Blocking: t.Blocking,
+			UpdatedAt: t.UpdatedAt.Format("2006-01-02"),
+		}
+	}
+	return rows
+}
+
+// listDetail reads the detail argument: "summary" (the default) or "full".
+func listDetail(v string) (full bool, err error) {
+	switch v {
+	case "", "summary":
+		return false, nil
+	case "full":
+		return true, nil
+	}
+	return false, fmt.Errorf("detail %q: use \"summary\" or \"full\"", v)
+}
+
+// listLimit reads the limit argument, falling back to the default and
+// capping at the maximum.
+func listLimit(v any) int {
+	n, ok := v.(float64)
+	if !ok || n < 1 {
+		return defaultListLimit
+	}
+	return min(int(n), maxListLimit)
+}
+
+// listReply renders a listing of a project's tickets, cut to limit.
+func listReply(projectID string, tasks []*domain.Task, full bool, limit int) (string, error) {
+	reply := map[string]any{
+		"project_id": strings.ToUpper(projectID),
+		"total":      len(tasks),
+	}
+	if len(tasks) > limit {
+		reply["truncated"] = true
+		reply["hint"] = fmt.Sprintf("%d more not shown: narrow with status or assignee_id, or raise limit (max %d)",
+			len(tasks)-limit, maxListLimit)
+		tasks = tasks[:limit]
+	}
+	reply["returned"] = len(tasks)
+	if full {
+		if tasks == nil {
+			tasks = []*domain.Task{}
+		}
+		reply["tasks"] = tasks
+	} else {
+		reply["tasks"] = rowsOf(tasks)
+	}
+	return compactJSON(reply)
+}
+
+func compactJSON(v any) (string, error) {
+	b, err := json.Marshal(v)
+	return string(b), err
 }
 
 func CallTool(svc *domain.Service, name string, args map[string]any) (string, error) {
@@ -197,11 +295,15 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if a := str("assignee_id"); a != "" {
 			filters.AssigneeID = &a
 		}
+		detail, err := listDetail(str("detail"))
+		if err != nil {
+			return "", err
+		}
 		tasks, err := svc.ListTasks(pid, filters)
 		if err != nil {
 			return "", err
 		}
-		return toJSON(tasks)
+		return listReply(pid, tasks, detail, listLimit(args["limit"]))
 
 	case "get_task":
 		tid := str("task_id")
@@ -399,7 +501,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 			if err != nil {
 				return "", err
 			}
-			return toJSON(map[string]any{"sprint": sp, "tasks": tasks})
+			return compactJSON(map[string]any{"sprint": sp, "tasks": rowsOf(tasks)})
 		}
 		// Fall back to active-sprint lookup via project_id.
 		pid := str("project_id")
@@ -427,7 +529,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if err != nil {
 			return "", err
 		}
-		return toJSON(map[string]any{"sprint": active, "tasks": tasks})
+		return compactJSON(map[string]any{"sprint": active, "tasks": rowsOf(tasks)})
 
 	case "add_blocker":
 		taskID := str("task_id")

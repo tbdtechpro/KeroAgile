@@ -140,3 +140,40 @@ func TestListUnfiled(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 	assert.Contains(t, string(body), "run.log")
 }
+
+// A sync secondary's token passes s.auth for proxied writes, with no check
+// of which projects it was granted. Records are not synced, so no secondary
+// has any business on these routes.
+func TestRecordRoutes_RefuseSyncTokens(t *testing.T) {
+	db, err := store.Open(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	st := store.New(db)
+	svc := domain.NewService(st)
+	srv := api.New(svc, st, st, "test-secret", syncsrv.ModePrimary, nil)
+	require.NoError(t, svc.CreateProject("TST", "Test", ""))
+	_, err = svc.CreateTask("a ticket", "", "TST", domain.TaskCreateOpts{})
+	require.NoError(t, err)
+	k := artifacts.New(svc, st, artifacts.Settings{Dir: t.TempDir(), LocalMax: 1 << 30, MaxFile: 1 << 30,
+		DefaultPolicy: domain.PolicyLocal, DiskFree: func(string) (uint64, error) { return 1 << 40, nil }})
+	srv.SetFiles(k)
+	p := filepath.Join(t.TempDir(), "secret.log")
+	require.NoError(t, os.WriteFile(p, []byte("private"), 0o644))
+	a, err := k.Attach("TST-001", p, "", "", "")
+	require.NoError(t, err)
+	token, err := st.AddSecondary("laptop2", "Laptop 2")
+	require.NoError(t, err)
+
+	for _, rt := range []struct{ method, path, body string }{
+		{http.MethodPost, "/api/artifacts/" + itoa64(a.ID) + "/url", ""},
+		{http.MethodGet, "/api/projects/TST/artifacts", ""},
+		{http.MethodPost, "/api/tasks/TST-001/notes", `{"body":"x"}`},
+	} {
+		req := httptest.NewRequest(rt.method, rt.path, strings.NewReader(rt.body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-Sync-Origin", "laptop2")
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusForbidden, w.Code, rt.path)
+	}
+}

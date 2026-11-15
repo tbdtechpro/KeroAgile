@@ -26,12 +26,26 @@ import (
 func (s *Server) SetFiles(k *artifacts.Keeper) { s.files = k }
 
 func (s *Server) recordRoutes() {
-	s.mux.HandleFunc("POST /api/tasks/{id}/notes", s.auth(s.handleAddNote))
-	s.mux.HandleFunc("GET /api/projects/{id}/artifacts", s.auth(s.handleListArtifacts))
-	s.mux.HandleFunc("POST /api/artifacts/{id}/url", s.auth(s.handleArtifactURL))
+	s.mux.HandleFunc("POST /api/tasks/{id}/notes", s.userAuth(s.handleAddNote))
+	s.mux.HandleFunc("GET /api/projects/{id}/artifacts", s.userAuth(s.handleListArtifacts))
+	s.mux.HandleFunc("POST /api/artifacts/{id}/url", s.userAuth(s.handleArtifactURL))
 	// No bearer token: a browser loads this from <a>, <img>, <video>. The
 	// short-lived signature in the query string stands in for the login.
 	s.mux.HandleFunc("GET /api/artifacts/{id}/content", s.handleArtifactContent)
+}
+
+// userAuth is auth for a logged-in user only. auth also lets a sync
+// secondary's token through for proxied writes, without checking which
+// projects it was granted (KA-072); records are not synced, so a secondary
+// has no business here.
+func (s *Server) userAuth(next http.HandlerFunc) http.HandlerFunc {
+	return s.auth(func(w http.ResponseWriter, r *http.Request) {
+		if userID(r) == "" {
+			writeErr(w, http.StatusForbidden, "notes and files are not available to sync secondaries")
+			return
+		}
+		next(w, r)
+	})
 }
 
 // linkTTL is how long a signed file link works.

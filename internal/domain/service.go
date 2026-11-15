@@ -276,7 +276,23 @@ func (s *Service) ListTasks(projectID string, f TaskFilters) ([]*Task, error) {
 	return tasks, nil
 }
 
+// GetTask returns a ticket in full: its blockers, what it blocks, and its
+// records (notes, links and files).
 func (s *Service) GetTask(id string) (*Task, error) {
+	t, err := s.taskWithDeps(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.withRecords(t); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// taskWithDeps returns a ticket with its blockers and what it blocks, without
+// its records. Changes return this: the API sends what a change returns to
+// sync secondaries, and records are not synced.
+func (s *Service) taskWithDeps(id string) (*Task, error) {
 	t, err := s.task(id)
 	if err != nil {
 		return nil, err
@@ -287,9 +303,6 @@ func (s *Service) GetTask(id string) (*Task, error) {
 	}
 	t.Blockers = blockers
 	t.Blocking = blocking
-	if err := s.withRecords(t); err != nil {
-		return nil, err
-	}
 	return t, nil
 }
 
@@ -523,5 +536,5 @@ func (s *Service) PatchTask(id string, p TaskPatch) (*Task, error) {
 			return nil, err
 		}
 	}
-	return s.GetTask(t.ID)
+	return s.taskWithDeps(t.ID)
 }

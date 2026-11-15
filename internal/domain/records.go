@@ -33,7 +33,7 @@ func (s *Service) AddNote(taskID, authorID, body string) (*Note, error) {
 	if err != nil {
 		return nil, err
 	}
-	body = strings.TrimSpace(body)
+	body = strings.TrimSpace(StripControl(body))
 	if body == "" {
 		return nil, fmt.Errorf("%w note: the note is empty", ErrInvalid)
 	}
@@ -68,4 +68,20 @@ func (s *Service) withRecords(t *Task) error {
 	}
 	t.Notes = notes
 	return nil
+}
+
+// StripControl removes control characters other than newline and tab, and
+// turns CRLF into LF. Text kept on the board is shown in terminals, where an
+// escape sequence would be obeyed rather than shown.
+func StripControl(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return -1
+		}
+		return r
+	}, s)
 }

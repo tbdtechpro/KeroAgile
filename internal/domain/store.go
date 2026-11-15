@@ -58,6 +58,12 @@ type Store interface {
 	AddNote(n *Note) error
 	ListNotes(taskID string) ([]*Note, error)
 
+	// Links. UpsertLink records l, or refreshes the title, URL and state of
+	// the link with the same ticket, kind, repo and ref; it fills l from the
+	// stored row and reports whether the row is new.
+	UpsertLink(l *Link) (created bool, err error)
+	ListLinks(taskID string) ([]*Link, error)
+
 	// Artifacts (files kept against tickets). The blob an artifact names must
 	// be recorded first; blob bookkeeping is the artifacts package's own.
 	AddArtifact(a *Artifact) error

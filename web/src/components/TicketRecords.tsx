@@ -28,9 +28,32 @@ export default function TicketRecords({
 
   const notes = task?.notes ?? []
   const files = task?.artifacts ?? []
+  const links = task?.links ?? []
 
   return (
     <div className="flex flex-col gap-4">
+      {links.length > 0 && (
+        <div>
+          <p className="text-xs mb-1" style={{ color: 'var(--ka-muted)' }}>Links ({links.length})</p>
+          <ul className="flex flex-col gap-1">
+            {links.map(l => {
+              const ref = l.kind === 'commit' ? l.ref.slice(0, 7) : l.kind === 'pr' ? `#${l.ref}` : l.ref
+              return (
+                <li key={l.id} className="text-xs flex gap-2 items-baseline">
+                  <span className="shrink-0 w-12" style={{ color: 'var(--ka-muted)' }}>{l.kind}</span>
+                  {l.url ? (
+                    <a href={l.url} target="_blank" rel="noopener noreferrer" className="shrink-0 underline" style={{ color: 'var(--ka-accent-lt)' }}>{ref}</a>
+                  ) : (
+                    <code className="shrink-0" style={{ color: 'var(--ka-accent-lt)' }}>{ref}</code>
+                  )}
+                  <span className="truncate" style={{ color: l.state === 'superseded' ? 'var(--ka-muted)' : 'var(--ka-text)' }} title={l.title}>{l.title}</span>
+                  {l.state && <span className="shrink-0" style={{ color: l.state === 'merged' ? 'var(--ka-green)' : 'var(--ka-muted)' }}>{l.state}</span>}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
       {files.length > 0 && (
         <div>
           <p className="text-xs mb-1" style={{ color: 'var(--ka-muted)' }}>Files ({files.length})</p>

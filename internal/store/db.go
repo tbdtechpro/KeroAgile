@@ -240,4 +240,19 @@ CREATE TABLE IF NOT EXISTS sweep_skips (
     count   INTEGER NOT NULL DEFAULT 0,
     last_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS task_links (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,
+    repo       TEXT NOT NULL DEFAULT '',
+    ref        TEXT NOT NULL,
+    title      TEXT NOT NULL DEFAULT '',
+    url        TEXT NOT NULL DEFAULT '',
+    state      TEXT NOT NULL DEFAULT '',
+    source     TEXT NOT NULL DEFAULT 'manual',
+    created_at TEXT NOT NULL,
+    UNIQUE(task_id, kind, repo, ref)
+);
+CREATE INDEX IF NOT EXISTS idx_task_links_repo ON task_links(repo, kind, state);
 `

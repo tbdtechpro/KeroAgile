@@ -25,6 +25,8 @@ type mockStore struct {
 	blocking map[string][]string // blocker_id -> []blocked_id
 
 	notes   []*domain.Note
+	links   []*domain.Link
+	linkSeq int64
 	noteSeq int64
 
 	lastQuery domain.TaskQuery   // the query FindTasks was last called with
@@ -398,3 +400,36 @@ func (m *mockStore) ListNotes(taskID string) ([]*domain.Note, error) {
 }
 
 func (m *mockStore) ListArtifacts(q domain.ArtifactQuery) ([]*domain.Artifact, error) { return nil, nil }
+
+func (m *mockStore) UpsertLink(l *domain.Link) (bool, error) {
+	for _, have := range m.links {
+		if have.TaskID == l.TaskID && have.Kind == l.Kind && have.Repo == l.Repo && have.Ref == l.Ref {
+			if l.Title != "" {
+				have.Title = l.Title
+			}
+			if l.URL != "" {
+				have.URL = l.URL
+			}
+			if l.State != "" {
+				have.State = l.State
+			}
+			*l = *have
+			return false, nil
+		}
+	}
+	m.linkSeq++
+	l.ID = m.linkSeq
+	cp := *l
+	m.links = append(m.links, &cp)
+	return true, nil
+}
+
+func (m *mockStore) ListLinks(taskID string) ([]*domain.Link, error) {
+	var out []*domain.Link
+	for _, l := range m.links {
+		if l.TaskID == taskID {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}

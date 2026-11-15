@@ -103,3 +103,19 @@ func TestDetail_FilesUnavailableShowsHash(t *testing.T) {
 	assert.Contains(t, view, "unavailable")
 	assert.Contains(t, view, "0123456789ab")
 }
+
+func TestDetail_ShowsLinks(t *testing.T) {
+	task := ticketWithNotes(0)
+	task.Links = []*domain.Link{
+		{Kind: domain.LinkCommit, Ref: "abcdef1234567890", Title: "fix: the flicker (AA-001)"},
+		{Kind: domain.LinkPR, Ref: "42", State: "merged", Title: "Fix the flicker"},
+		{Kind: domain.LinkCommit, Ref: "1111111aaaa", State: domain.LinkSuperseded, Title: "wip"},
+	}
+	view := tui.NewDetail(90, 30).SetTask(task).View()
+	assert.Contains(t, view, "Links (3)")
+	assert.Contains(t, view, "abcdef1")
+	assert.NotContains(t, view, "abcdef1234567890", "commits are shown short")
+	assert.Contains(t, view, "#42")
+	assert.Contains(t, view, "merged")
+	assert.Contains(t, view, "superseded")
+}

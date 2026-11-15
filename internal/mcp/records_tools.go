@@ -39,6 +39,18 @@ func recordToolList() []toolDef {
 			}, "task_id", "body"),
 		},
 		{
+			Name: "add_link",
+			Description: "Link a ticket to a commit, branch, pull request or tag. A ticket can have many links; linking the same thing twice is harmless. " +
+				"Commits whose message names the ticket are linked automatically by the Stop hook's scan.",
+			InputSchema: objSchema(map[string]any{
+				"task_id": strSchema("Ticket ID"),
+				"kind":    strSchema("commit | branch | pr | tag"),
+				"ref":     strSchema("The commit SHA, branch name, PR number or tag"),
+				"repo":    strSchema("host/owner/repo (default: the ticket's project's remote)"),
+				"title":   strSchema("Commit subject or PR title"),
+			}, "task_id", "kind", "ref"),
+		},
+		{
 			Name: "set_project",
 			Description: "Change a project's settings: its local checkout directory, its forge repository, and what happens to files kept for its tickets " +
 				"(artifact_policy: remote = keep and upload to the remote store, local = keep on this machine only, off = keep nothing, default = follow the configured default).",
@@ -156,6 +168,15 @@ func callRecordTool(env Env, name string, args map[string]any) (out string, ok b
 			return "", true, err
 		}
 		out, err := indentJSON(n)
+		return out, true, err
+
+	case "add_link":
+		l, created, err := svc.AddLink(str("task_id"), domain.Link{Kind: domain.LinkKind(strings.ToLower(str("kind"))),
+			Ref: str("ref"), Repo: str("repo"), Title: str("title")})
+		if err != nil {
+			return "", true, err
+		}
+		out, err := indentJSON(map[string]any{"created": created, "link": l})
 		return out, true, err
 
 	case "set_project":

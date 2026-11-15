@@ -29,7 +29,21 @@ export interface Task {
   created_at: string
   updated_at: string
   notes?: Note[]
+  links?: Link[]
   artifacts?: Artifact[]
+}
+
+export interface Link {
+  id: number
+  task_id: string
+  kind: 'commit' | 'branch' | 'pr' | 'tag'
+  repo?: string
+  ref: string
+  title?: string
+  url?: string
+  state?: string
+  source: string
+  created_at: string
 }
 
 export type ArtifactKind = 'script' | 'log' | 'image' | 'audio' | 'video' | 'document' | 'other'

@@ -32,6 +32,38 @@ var taskNoteCmd = &cobra.Command{
 	},
 }
 
+var taskLinkCmd = &cobra.Command{
+	Use:   "link <task-id> (--commit <sha> | --pr <n> | --branch <name> | --tag <name>)",
+	Short: "Link a ticket to a commit, pull request, branch or tag",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repo, _ := cmd.Flags().GetString("repo")
+		var l domain.Link
+		for _, k := range []domain.LinkKind{domain.LinkCommit, domain.LinkPR, domain.LinkBranch, domain.LinkTag} {
+			if v, _ := cmd.Flags().GetString(string(k)); v != "" {
+				if l.Kind != "" {
+					return fmt.Errorf("%w link: give one of --commit, --pr, --branch, --tag", domain.ErrInvalid)
+				}
+				l.Kind, l.Ref = k, v
+			}
+		}
+		if l.Kind == "" {
+			return fmt.Errorf("%w link: give one of --commit, --pr, --branch, --tag", domain.ErrInvalid)
+		}
+		l.Repo = repo
+		got, created, err := svc.AddLink(args[0], l)
+		if err != nil {
+			return err
+		}
+		if jsonFlag {
+			printJSON(map[string]any{"created": created, "link": got})
+		} else {
+			fmt.Printf("linked %s %s %s\n", got.TaskID, got.Kind, got.Ref)
+		}
+		return nil
+	},
+}
+
 // printRecords prints a ticket's notes, links and files under task get.
 func printRecords(t *domain.Task) {
 	if len(t.Notes) > 0 {
@@ -47,6 +79,12 @@ func printRecords(t *domain.Task) {
 			}
 		}
 	}
+	if len(t.Links) > 0 {
+		fmt.Println("  Links:")
+		for _, l := range t.Links {
+			fmt.Printf("    %-6s %-14s %-10s %s\n", l.Kind, shortRef(l), l.State, l.Title)
+		}
+	}
 	if len(t.Artifacts) > 0 {
 		fmt.Println("  Files:")
 		for _, a := range t.Artifacts {
@@ -55,6 +93,20 @@ func printRecords(t *domain.Task) {
 	}
 }
 
+func shortRef(l *domain.Link) string {
+	switch {
+	case l.Kind == domain.LinkCommit && len(l.Ref) > 10:
+		return l.Ref[:10]
+	case l.Kind == domain.LinkPR:
+		return "#" + l.Ref
+	}
+	return l.Ref
+}
+
 func init() {
-	taskCmd.AddCommand(taskNoteCmd)
+	for _, k := range []string{"commit", "pr", "branch", "tag"} {
+		taskLinkCmd.Flags().String(k, "", "the "+k+" to link")
+	}
+	taskLinkCmd.Flags().String("repo", "", "host/owner/repo (default: the project's remote)")
+	taskCmd.AddCommand(taskNoteCmd, taskLinkCmd)
 }

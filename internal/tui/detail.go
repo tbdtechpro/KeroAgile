@@ -177,6 +177,31 @@ func (d Detail) View() string {
 		}
 	}
 
+	if len(t.Links) > 0 {
+		sb.WriteString("\n" + styles.Muted.Render(fmt.Sprintf("Links (%d)", len(t.Links))) + "\n")
+		for _, l := range t.Links {
+			ref := l.Ref
+			switch {
+			case l.Kind == domain.LinkCommit && len(ref) > 7:
+				ref = ref[:7]
+			case l.Kind == domain.LinkPR:
+				ref = "#" + ref
+			}
+			state := ""
+			if l.State != "" {
+				st := styles.Muted
+				if l.State == "merged" {
+					st = lipgloss.NewStyle().Foreground(styles.CGreen)
+				}
+				state = "  " + st.Render(l.State)
+			}
+			sb.WriteString(fmt.Sprintf("%s %s %s%s\n",
+				styles.Muted.Render(fmt.Sprintf("%-6s", l.Kind)),
+				lipgloss.NewStyle().Foreground(styles.CAccentLt).Render(ref),
+				styles.NormalRow.Render(truncate(l.Title, max(8, w-30))), state))
+		}
+	}
+
 	if len(t.Artifacts) > 0 || d.unfiled > 0 {
 		sb.WriteString("\n" + styles.Muted.Render(fmt.Sprintf("Files (%d)", len(t.Artifacts))) + "\n")
 		for _, a := range t.Artifacts {

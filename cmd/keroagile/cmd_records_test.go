@@ -77,3 +77,27 @@ func TestArtifactsCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, out, "run.log")
 }
+
+func TestTaskLink(t *testing.T) {
+	isolate(t)
+	_, err := runCLI(t, "project", "add", "AA", "Alpha", "--repo", "github.com/o/r")
+	require.NoError(t, err)
+	_, err = runCLI(t, "task", "add", "a ticket", "--project", "AA")
+	require.NoError(t, err)
+
+	out, err := runCLI(t, "task", "link", "AA-001", "--commit", "abcdef12")
+	require.NoError(t, err)
+	assert.Contains(t, out, "https://github.com/o/r/commit/abcdef12")
+	_, err = runCLI(t, "task", "link", "AA-001", "--pr", "5")
+	require.NoError(t, err)
+
+	out, err = runCLI(t, "task", "get", "AA-001")
+	require.NoError(t, err)
+	assert.Contains(t, out, `"links"`)
+	assert.Contains(t, out, "/pull/5")
+
+	_, err = runCLI(t, "task", "link", "AA-001", "--commit", "zzz")
+	assert.Equal(t, 2, exitCode(err))
+	_, err = runCLI(t, "task", "link", "AA-001")
+	assert.Equal(t, 2, exitCode(err), "say what to link")
+}

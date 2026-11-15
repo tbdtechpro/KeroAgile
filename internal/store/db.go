@@ -233,4 +233,11 @@ CREATE TABLE IF NOT EXISTS kv (
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS sweep_skips (
+    dir     TEXT PRIMARY KEY,
+    reason  TEXT NOT NULL,
+    count   INTEGER NOT NULL DEFAULT 0,
+    last_at TEXT NOT NULL
+);
 `

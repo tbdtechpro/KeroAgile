@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -26,7 +27,14 @@ func isolate(t *testing.T) string {
 // terminal, so commands print JSON.
 func runCLI(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	return runCLIIn(t, "", args...)
+}
+
+// runCLIIn is runCLI with stdin.
+func runCLIIn(t *testing.T, stdin string, args ...string) (string, error) {
+	t.Helper()
 	resetFlags(rootCmd)
+	rootCmd.SetIn(strings.NewReader(stdin))
 	old := os.Stdout
 	r, w, err := os.Pipe()
 	require.NoError(t, err)

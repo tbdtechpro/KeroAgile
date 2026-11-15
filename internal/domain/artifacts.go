@@ -209,3 +209,12 @@ func EffectivePolicy(p *Project, def ArtifactPolicy) ArtifactPolicy {
 	}
 	return def
 }
+
+// SweepSkip is a directory a sweep captured nothing from, and why: no
+// project, or two projects equally.
+type SweepSkip struct {
+	Dir    string    `json:"dir"`
+	Reason string    `json:"reason"`
+	Count  int       `json:"count"`
+	LastAt time.Time `json:"last_at"`
+}

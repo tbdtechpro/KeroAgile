@@ -57,6 +57,8 @@ type Records interface {
 	KVGet(key string) (string, bool, error)
 	KVSet(key, value string) error
 	KVLease(key, holder string, ttl time.Duration, now time.Time) (bool, error)
+	RecordSkip(dir, reason string, at time.Time) error
+	ListSkips() ([]domain.SweepSkip, error)
 }
 
 // ErrNoRoom means a file was refused because keeping it would take the
@@ -110,27 +112,19 @@ func (k *Keeper) policy(projectID string) (domain.ArtifactPolicy, error) {
 
 // Status is the state of the holding area and the remote.
 type Status struct {
-	Dir           string `json:"dir"`
-	LocalBytes    int64  `json:"local_bytes"`
-	LocalMax      int64  `json:"local_max"`
-	DiskFree      int64  `json:"disk_free,omitempty"`
-	MinFree       int64  `json:"min_free"`
-	Remote        string `json:"remote"`
-	WaitingBytes  int64  `json:"waiting_bytes"` // held here only, for projects that upload
-	WaitingFiles  int    `json:"waiting_files"` //
-	LastSync      string `json:"last_sync,omitempty"`
-	LastSyncError string `json:"last_sync_error,omitempty"`
-	LastHookError string `json:"last_hook_error,omitempty"`
-	SkippedSweeps []Skip `json:"skipped_sweeps,omitempty"`
-	DefaultPolicy string `json:"default_policy"`
-}
-
-// Skip is a directory a sweep did not capture, and why.
-type Skip struct {
-	Dir    string `json:"dir"`
-	Reason string `json:"reason"`
-	Count  int    `json:"count"`
-	LastAt string `json:"last_at"`
+	Dir           string             `json:"dir"`
+	LocalBytes    int64              `json:"local_bytes"`
+	LocalMax      int64              `json:"local_max"`
+	DiskFree      int64              `json:"disk_free,omitempty"`
+	MinFree       int64              `json:"min_free"`
+	Remote        string             `json:"remote"`
+	WaitingBytes  int64              `json:"waiting_bytes"` // held here only, for projects that upload
+	WaitingFiles  int                `json:"waiting_files"`
+	LastSync      string             `json:"last_sync,omitempty"`
+	LastSyncError string             `json:"last_sync_error,omitempty"`
+	LastHookError string             `json:"last_hook_error,omitempty"`
+	SkippedSweeps []domain.SweepSkip `json:"skipped_sweeps,omitempty"`
+	DefaultPolicy string             `json:"default_policy"`
 }
 
 func (k *Keeper) Status() (Status, error) {
@@ -157,9 +151,7 @@ func (k *Keeper) Status() (Status, error) {
 	st.LastSync, _, _ = k.st.KVGet(kvLastSync)
 	st.LastSyncError, _, _ = k.st.KVGet(kvLastSyncError)
 	st.LastHookError, _, _ = k.st.KVGet(kvLastHookError)
-	if lister, ok := k.st.(interface{ ListSkips() ([]Skip, error) }); ok {
-		st.SkippedSweeps, _ = lister.ListSkips()
-	}
+	st.SkippedSweeps, _ = k.st.ListSkips()
 	return st, nil
 }
 

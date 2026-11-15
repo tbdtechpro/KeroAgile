@@ -238,13 +238,57 @@ var artifactsStatusCmd = &cobra.Command{
 			fmt.Printf("last hook error  %s\n", s.LastHookError)
 		}
 		for _, sk := range s.SkippedSweeps {
-			fmt.Printf("not swept     %s  (%s, %d times, last %s)\n", sk.Dir, sk.Reason, sk.Count, sk.LastAt)
+			fmt.Printf("not swept     %s  (%s, %d times, last %s)\n", sk.Dir, sk.Reason, sk.Count, sk.LastAt.Local().Format("2006-01-02 15:04"))
+		}
+		return nil
+	},
+}
+
+var artifactsSweepCmd = &cobra.Command{
+	Use:   "sweep --dir <folder>",
+	Short: "Keep a folder's new or changed files as unfiled files of a project",
+	Long: `Keeps the files in a folder that are not kept already, as unfiled files of a
+project (by default, the project of the working directory). The Stop hook runs
+this for each session's scratch folder; run it by hand for any other folder.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		dir, _ := cmd.Flags().GetString("dir")
+		if dir == "" {
+			return fmt.Errorf("%w sweep: --dir is required", domain.ErrInvalid)
+		}
+		session, _ := cmd.Flags().GetString("session")
+		projectID, _ := cmd.Flags().GetString("project")
+		var p *domain.Project
+		var err error
+		if projectID != "" {
+			p, err = svc.GetProject(projectID)
+		} else {
+			p, err = projectForDir("")
+		}
+		if err != nil {
+			return err
+		}
+		k, err := keeperOrErr()
+		if err != nil {
+			return err
+		}
+		res, err := k.Sweep(context.Background(), artifacts.SweepInput{Dir: dir, SessionID: session, Project: p})
+		if err != nil {
+			return err
+		}
+		if jsonFlag {
+			printJSON(res)
+		} else {
+			fmt.Printf("kept %d, updated %d, skipped %d %v\n", res.Kept, res.Updated, res.Skipped, res.Reasons)
 		}
 		return nil
 	},
 }
 
 func init() {
+	artifactsSweepCmd.Flags().String("dir", "", "folder to sweep")
+	artifactsSweepCmd.Flags().String("session", "", "session ID to record")
+	artifactsSweepCmd.Flags().String("project", "", "project (default: the project of the working directory)")
 	artifactsAttachCmd.Flags().String("kind", "", "script|log|image|audio|video|document|other (default: from the file name)")
 	artifactsAttachCmd.Flags().String("note", "", "a caption")
 	artifactsListCmd.Flags().String("task", "", "a ticket's files")
@@ -252,6 +296,6 @@ func init() {
 	artifactsListCmd.Flags().Bool("unfiled", false, "only files on no ticket")
 	artifactsFetchCmd.Flags().String("to", "", "also copy the file here (must not exist)")
 	artifactsCmd.AddCommand(artifactsAttachCmd, artifactsListCmd, artifactsFetchCmd, artifactsFileCmd,
-		artifactsDiscardCmd, artifactsStatusCmd)
+		artifactsDiscardCmd, artifactsStatusCmd, artifactsSweepCmd)
 	rootCmd.AddCommand(artifactsCmd)
 }

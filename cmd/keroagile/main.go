@@ -66,7 +66,11 @@ func init() {
 }
 
 func main() {
-	os.Exit(exitCode(rootCmd.Execute()))
+	err := rootCmd.Execute()
+	if isHookStop(os.Args[1:]) {
+		os.Exit(0) // a Stop hook must never fail the turn
+	}
+	os.Exit(exitCode(err))
 }
 
 // exitCode maps a command's error to the documented exit codes: 2 when the

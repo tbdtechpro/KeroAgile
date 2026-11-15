@@ -333,3 +333,34 @@ func (s *Store) KVLease(key, holder string, ttl time.Duration, now time.Time) (b
 	n, err := res.RowsAffected()
 	return n == 1, err
 }
+
+// --- skipped sweeps ---
+
+// RecordSkip notes a sweep of dir that captured nothing.
+func (s *Store) RecordSkip(dir, reason string, at time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO sweep_skips(dir, reason, count, last_at) VALUES(?,?,1,?)
+		ON CONFLICT(dir) DO UPDATE SET reason = excluded.reason, count = count + 1, last_at = excluded.last_at`,
+		dir, reason, stamp(at))
+	return err
+}
+
+// ListSkips returns the directories sweeps captured nothing from, most
+// recent first.
+func (s *Store) ListSkips() ([]domain.SweepSkip, error) {
+	rows, err := s.db.Query(`SELECT dir, reason, count, last_at FROM sweep_skips ORDER BY last_at DESC LIMIT 50`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.SweepSkip
+	for rows.Next() {
+		var sk domain.SweepSkip
+		var at string
+		if err := rows.Scan(&sk.Dir, &sk.Reason, &sk.Count, &at); err != nil {
+			return nil, err
+		}
+		sk.LastAt = parseStamp(at)
+		out = append(out, sk)
+	}
+	return out, rows.Err()
+}

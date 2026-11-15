@@ -220,6 +220,8 @@ type projectRow struct {
 	RepoPath   string `json:"repo_path,omitempty"`
 	RepoDir    string `json:"repo_dir,omitempty"`
 	RepoRemote string `json:"repo_remote,omitempty"`
+	Policy     string `json:"artifact_policy,omitempty"`  // as set on the project; empty follows the default
+	Effective  string `json:"effective_policy,omitempty"` // what applies, when the server keeps files
 	SprintMode bool   `json:"sprint_mode,omitempty"`
 	SyncOrigin string `json:"sync_origin,omitempty"`
 }
@@ -363,7 +365,10 @@ func CallToolEnv(env Env, name string, args map[string]any) (string, error) {
 		rows := make([]projectRow, len(projects))
 		for i, p := range projects {
 			rows[i] = projectRow{ID: p.ID, Name: p.Name, RepoPath: p.RepoPath, RepoDir: p.RepoDir, RepoRemote: p.RepoRemote,
-				SprintMode: p.SprintMode, SyncOrigin: p.SyncOrigin}
+				Policy: string(p.ArtifactPolicy), SprintMode: p.SprintMode, SyncOrigin: p.SyncOrigin}
+			if env.Files != nil {
+				rows[i].Effective = string(domain.EffectivePolicy(p, env.Files.Settings().DefaultPolicy))
+			}
 			for status, n := range counts[p.ID] {
 				rows[i].Total += n
 				if status != domain.StatusDone {

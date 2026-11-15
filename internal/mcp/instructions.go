@@ -4,9 +4,12 @@ package mcp
 // client receives this guidance once per session at handshake. The 2024-11-05
 // MCP spec defines this field for exactly this purpose.
 //
-// Keep this string in sync with the "Concepts that don't exist" section of
-// the project's CLAUDE.md.
-const serverInstructions = `KeroAgile data model — important constraints:
+// The first part is kept in sync with the "Concepts that don't exist"
+// section of the project's CLAUDE.md. The second tells Claude to keep what
+// its work produces with the ticket.
+const serverInstructions = conceptsInstructions + "\n\n" + recordsInstructions
+
+const conceptsInstructions = `KeroAgile data model — important constraints:
 
 Tasks are FLAT within a project. There is NO concept of:
   - parent tasks
@@ -28,3 +31,20 @@ To group related work, use:
   - shared sprint (assign tasks to the same sprint via assign_task_sprint)
 
 Never invent a parent task or umbrella task to "contain" related work.`
+
+const recordsInstructions = `Keeping work products with the ticket:
+
+When work on a ticket produces files outside the repository — test scripts,
+logs, screenshots, audio, video, rendered output, reference material — attach
+each one worth keeping with attach_file before finishing the ticket, with a
+short note saying what it is. Session scratch folders are wiped, and a file
+not attached has to be recreated later. A file that belongs in the repository
+is committed instead, and the commit mentions the ticket ID.
+
+Record what you found, decided or tried with add_note rather than rewriting
+the description. Notes are dated, signed and never overwritten.
+
+Files you do not attach may be kept by a sweep as unfiled files of the
+project. list_artifacts with project_id and unfiled=true shows them; file
+each on its ticket with file_artifact, or discard_artifact what is not worth
+keeping. Never guess a ticket for a file.`

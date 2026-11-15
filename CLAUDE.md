@@ -112,6 +112,7 @@ All domain structs have `json:"snake_case"` tags. Field names in JSON output:
 - `update_task` changes only the fields passed. Empty strings are ignored (agents send them for fields they do not mean to touch); to empty a field, name it in `clear` (`description`, `points`, `labels`, `assignee_id`, `sprint_id`). It accepts `sprint_id`, and `expected_updated_at` from `get_task` for a conditional update
 - `list_tasks` (one project) and `search_tasks` (every project, or one) both go through `Service.FindTasks`, so their filters behave identically: `status` takes one status or `open` (everything not done), plus `assignee_id`, `label`, and for `list_tasks` `sprint_id`. `search_tasks` adds `query` and needs at least one criterion; with no query it is the cross-project view (for example `status=in_progress` with `assignee_id`). A mistyped status is an error, not an empty list
 - `add_note(task_id, body)` adds a note signed by `KEROAGILE_USER`, else the `claude` user when the board has one (`authorID`). Record tools live in `internal/mcp/records_tools.go` and are reached from `CallTool`'s default case through `callRecordTool`
+- `set_project(project_id, repo_dir?, repo_remote?, artifact_policy?)` changes project settings through `Service.PatchProject`; `list_projects` shows `artifact_policy` as set and, when the server keeps files, `effective_policy`
 - File tools: `attach_file(task_id, path, kind?, note?)`, `list_artifacts(task_id | project_id [+ unfiled])`, `fetch_artifact(artifact_id)` → local path, `file_artifact`, `discard_artifact`. `get_task` lists a ticket's files compactly (`artifactRow`). The server gets the keeper through `mcp.Env{Svc, Files, FilesErr}` (`CallToolEnv`, `DispatchEnv`); a bad `[artifacts]` config leaves `Files` nil and the file tools say why, rather than the server failing to start
 - `list_projects` returns compact rows with `open` and `total` ticket counts
 - Listings (`list_tasks`, `search_tasks`, `get_sprint`) return one compact `taskRow` per ticket, without descriptions, as unindented JSON inside `{project_id, total, returned, tasks}`; when cut to `limit` (`list_tasks` default 200, max 500; `search_tasks` default 50, max 200) the reply adds `truncated` and a `hint`. `get_task` is the full view; `list_tasks` with `detail: "full"` includes descriptions
@@ -145,7 +146,7 @@ To group related work, use:
 - **shared labels** (free-form strings on each task), or
 - **shared sprint** (assign tasks to the same sprint via `assign_task_sprint` or the sidebar)
 
-This section is mirrored verbatim by `internal/mcp/instructions.go` so MCP clients see the same constraint at handshake time. Keep them in sync.
+This section is mirrored verbatim by `internal/mcp/instructions.go` (`conceptsInstructions`) so MCP clients see the same constraint at handshake time. Keep them in sync. The handshake also sends `recordsInstructions`: attach work products with `attach_file` before finishing a ticket, commit what belongs in the repo, record progress with `add_note`, and file or discard unfiled files without guessing a ticket.
 
 ## Known limitations
 

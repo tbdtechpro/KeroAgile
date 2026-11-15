@@ -39,6 +39,17 @@ func recordToolList() []toolDef {
 			}, "task_id", "body"),
 		},
 		{
+			Name: "set_project",
+			Description: "Change a project's settings: its local checkout directory, its forge repository, and what happens to files kept for its tickets " +
+				"(artifact_policy: remote = keep and upload to the remote store, local = keep on this machine only, off = keep nothing, default = follow the configured default).",
+			InputSchema: objSchema(map[string]any{
+				"project_id":      strSchema("Project ID"),
+				"repo_dir":        strSchema("Local checkout directory"),
+				"repo_remote":     strSchema("Forge repository, e.g. github.com/owner/repo"),
+				"artifact_policy": strSchema("remote | local | off | default"),
+			}, "project_id"),
+		},
+		{
 			Name: "attach_file",
 			Description: "Keep a file against a ticket: a test script, a log, a screenshot, audio or video produced while working it outside the repo. " +
 				"The file is copied in, so it survives the session's scratch folder being wiped. Files that belong in the repo are committed instead.",
@@ -145,6 +156,31 @@ func callRecordTool(env Env, name string, args map[string]any) (out string, ok b
 			return "", true, err
 		}
 		out, err := indentJSON(n)
+		return out, true, err
+
+	case "set_project":
+		if str("project_id") == "" {
+			return "", true, errors.New("project_id is required")
+		}
+		var p domain.ProjectPatch
+		if v, ok := args["repo_dir"].(string); ok {
+			p.RepoDir = domain.To(v)
+		}
+		if v, ok := args["repo_remote"].(string); ok {
+			p.RepoRemote = domain.To(v)
+		}
+		if v, ok := args["artifact_policy"].(string); ok {
+			v = strings.ToLower(strings.TrimSpace(v))
+			if v == "default" {
+				v = ""
+			}
+			p.ArtifactPolicy = domain.To(domain.ArtifactPolicy(v))
+		}
+		proj, err := svc.PatchProject(str("project_id"), p)
+		if err != nil {
+			return "", true, err
+		}
+		out, err := compactJSON(proj)
 		return out, true, err
 
 	case "list_artifacts":

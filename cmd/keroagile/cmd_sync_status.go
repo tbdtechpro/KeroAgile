@@ -110,7 +110,7 @@ var syncStatusCmd = &cobra.Command{
 			return err
 		}
 
-		pr, err := git.PRForBranch(proj.RepoPath, branch)
+		pr, err := git.ForProject(proj).PRForBranch(branch)
 		if err != nil {
 			if !quiet {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warn: PR lookup failed: %v\n", err)

@@ -4,10 +4,9 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/git"
 )
 
 type Request struct {
@@ -91,20 +90,21 @@ func Dispatch(svc *domain.Service, req Request) *Response {
 	return base
 }
 
+// DetectProjectID returns the project the server's working directory belongs
+// to: the project whose directory holds it (the deepest one), or else the one
+// whose remote is this clone's origin. It returns "" when there is none or
+// when two projects match equally, so the caller asks for a project_id
+// instead of guessing.
 func DetectProjectID(svc *domain.Service) string {
-	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return ""
 	}
-	remote := strings.TrimSpace(string(out))
-	projects, err := svc.ListProjects()
+	remote, _ := git.RemoteURL(cwd)
+	home, _ := os.UserHomeDir()
+	p, err := svc.ProjectForDir(cwd, remote, home)
 	if err != nil {
 		return ""
 	}
-	for _, p := range projects {
-		if p.RepoPath != "" && strings.Contains(remote, p.RepoPath) {
-			return p.ID
-		}
-	}
-	return ""
+	return p.ID
 }

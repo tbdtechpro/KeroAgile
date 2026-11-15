@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 	_ "modernc.org/sqlite"
 )
 
@@ -64,9 +65,44 @@ func migrateAlter(db *sql.DB) error {
 		`ALTER TABLE projects ADD COLUMN sync_cursor INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE projects ADD COLUMN sync_status TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE users ADD COLUMN sync_origin TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE projects ADD COLUMN repo_dir TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE projects ADD COLUMN repo_remote TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE projects ADD COLUMN artifact_policy TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alters {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
+	}
+	return backfillRepo(db)
+}
+
+// backfillRepo sorts each old repo_path into repo_dir or repo_remote. It
+// touches only projects with neither set, so running it at every start is
+// harmless and a value set since is kept.
+func backfillRepo(db *sql.DB) error {
+	rows, err := db.Query(`SELECT id, repo_path FROM projects WHERE repo_dir = '' AND repo_remote = '' AND repo_path <> ''`)
+	if err != nil {
+		return err
+	}
+	type fill struct{ id, dir, remote string }
+	var fills []fill
+	for rows.Next() {
+		var id, repoPath string
+		if err := rows.Scan(&id, &repoPath); err != nil {
+			rows.Close()
+			return err
+		}
+		dir, remote := domain.ClassifyRepo(repoPath)
+		fills = append(fills, fill{id, dir, remote})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, f := range fills {
+		if _, err := db.Exec(`UPDATE projects SET repo_dir = ?, repo_remote = ? WHERE id = ? AND repo_dir = '' AND repo_remote = ''`,
+			f.dir, f.remote, f.id); err != nil {
 			return err
 		}
 	}

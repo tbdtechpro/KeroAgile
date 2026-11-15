@@ -34,6 +34,9 @@ export interface Project {
   id: string
   name: string
   repo_path: string
+  repo_dir?: string
+  repo_remote?: string
+  artifact_policy?: '' | 'remote' | 'local' | 'off'
   sprint_mode: boolean
   sync_origin?: string
   sync_status?: string

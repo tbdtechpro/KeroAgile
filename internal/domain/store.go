@@ -28,6 +28,8 @@ type Store interface {
 	ListProjects() ([]*Project, error)
 	GetProject(id string) (*Project, error)
 	UpdateProject(p *Project) error
+	// PatchProject changes only the settings p names.
+	PatchProject(id string, p ProjectPatch) error
 
 	// Tasks
 	CreateTask(t *Task) error

@@ -38,9 +38,9 @@ func toolList() []toolDef {
 			Name: "list_tasks",
 			Description: "List a project's tickets as compact summaries: id, title, status, priority, assignee, points, labels, sprint, branch, PR, blockers, blocking, last update. " +
 				"Descriptions are left out; use get_task for one ticket in full, or detail=\"full\" to include them here. " +
-				"Auto-detects project_id from git remote if not provided.",
+				"Auto-detects project_id from the working directory or git remote if not provided.",
 			InputSchema: obj(map[string]any{
-				"project_id":  str("Project ID (auto-detected from git remote if omitted)"),
+				"project_id":  str("Project ID (auto-detected from the working directory or git remote if omitted)"),
 				"status":      str("Filter by status: backlog|todo|in_progress|review|done, or open for everything not done"),
 				"assignee_id": str("Filter by assignee user ID"),
 				"label":       str("Only tickets carrying this label"),
@@ -73,7 +73,7 @@ func toolList() []toolDef {
 		},
 		{
 			Name:        "create_task",
-			Description: "Create a new task. Auto-detects project_id from git remote if not provided. Assignee is auto-suggested from title keywords when omitted.",
+			Description: "Create a new task. Auto-detects project_id from the working directory or git remote if not provided. Assignee is auto-suggested from title keywords when omitted.",
 			InputSchema: obj(map[string]any{
 				"title":       str("Task title (required)"),
 				"project_id":  str("Project ID (auto-detected if omitted)"),
@@ -90,9 +90,11 @@ func toolList() []toolDef {
 			Name:        "create_project",
 			Description: "Create a new KeroAgile project.",
 			InputSchema: obj(map[string]any{
-				"id":        str("Project ID, e.g. KA (uppercase letters, required)"),
-				"name":      str("Human-readable project name (required)"),
-				"repo_path": str("Git remote URL or repo path for auto-detection"),
+				"id":          str("Project ID, e.g. KA (uppercase letters, required)"),
+				"name":        str("Human-readable project name (required)"),
+				"repo_path":   str("A local directory or a git remote; sorted into repo_dir or repo_remote"),
+				"repo_dir":    str("The project's local checkout directory; sessions working inside it are matched to the project"),
+				"repo_remote": str("The project's forge repository, e.g. github.com/owner/repo or a clone URL"),
 			}, []string{"id", "name"}),
 		},
 		{
@@ -215,6 +217,8 @@ type projectRow struct {
 	Open       int    `json:"open"`  // tickets not done
 	Total      int    `json:"total"` // all tickets
 	RepoPath   string `json:"repo_path,omitempty"`
+	RepoDir    string `json:"repo_dir,omitempty"`
+	RepoRemote string `json:"repo_remote,omitempty"`
 	SprintMode bool   `json:"sprint_mode,omitempty"`
 	SyncOrigin string `json:"sync_origin,omitempty"`
 }
@@ -350,7 +354,8 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		}
 		rows := make([]projectRow, len(projects))
 		for i, p := range projects {
-			rows[i] = projectRow{ID: p.ID, Name: p.Name, RepoPath: p.RepoPath, SprintMode: p.SprintMode, SyncOrigin: p.SyncOrigin}
+			rows[i] = projectRow{ID: p.ID, Name: p.Name, RepoPath: p.RepoPath, RepoDir: p.RepoDir, RepoRemote: p.RepoRemote,
+				SprintMode: p.SprintMode, SyncOrigin: p.SyncOrigin}
 			for status, n := range counts[p.ID] {
 				rows[i].Total += n
 				if status != domain.StatusDone {
@@ -366,7 +371,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 			pid = DetectProjectID(svc)
 		}
 		if pid == "" {
-			return "", errors.New("project_id required — provide it or run `KeroAgile project add --repo <remote-url>` to enable auto-detection")
+			return "", errors.New("project_id required — provide it or or set the project's directory with `KeroAgile project set <id> --dir <path>` to enable auto-detection")
 		}
 		statuses, err := statusFilter(str("status"))
 		if err != nil {
@@ -435,7 +440,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 			pid = DetectProjectID(svc)
 		}
 		if pid == "" {
-			return "", errors.New("project_id required — provide it or run `KeroAgile project add --repo <remote-url>` to enable auto-detection")
+			return "", errors.New("project_id required — provide it or or set the project's directory with `KeroAgile project set <id> --dir <path>` to enable auto-detection")
 		}
 		opts := domain.TaskCreateOpts{
 			Priority: domain.Priority(str("priority")),
@@ -477,6 +482,18 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if err := svc.CreateProject(id, name, str("repo_path")); err != nil {
 			return "", err
 		}
+		if dir, remote := str("repo_dir"), str("repo_remote"); dir != "" || remote != "" {
+			var p domain.ProjectPatch
+			if dir != "" {
+				p.RepoDir = domain.To(dir)
+			}
+			if remote != "" {
+				p.RepoRemote = domain.To(remote)
+			}
+			if _, err := svc.PatchProject(id, p); err != nil {
+				return "", err
+			}
+		}
 		return toJSON(map[string]any{"created": strings.ToUpper(id), "name": name})
 
 	case "create_sprint":
@@ -489,7 +506,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 			pid = DetectProjectID(svc)
 		}
 		if pid == "" {
-			return "", errors.New("project_id required — provide it or run `KeroAgile project add --repo <remote-url>` to enable auto-detection")
+			return "", errors.New("project_id required — provide it or or set the project's directory with `KeroAgile project set <id> --dir <path>` to enable auto-detection")
 		}
 		var start, end *time.Time
 		if s := str("start_date"); s != "" {
@@ -648,7 +665,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 			pid = DetectProjectID(svc)
 		}
 		if pid == "" {
-			return "", errors.New("sprint_id or project_id required — provide sprint_id, pass project_id, or run `KeroAgile project add --repo <remote-url>` to enable auto-detection")
+			return "", errors.New("sprint_id or project_id required — provide sprint_id, pass project_id, or or set the project's directory with `KeroAgile project set <id> --dir <path>` to enable auto-detection")
 		}
 		sprints, err := svc.ListSprints(pid)
 		if err != nil {

@@ -129,12 +129,52 @@ func (s *Service) blocks(from, target string) (bool, error) {
 	return false, nil
 }
 
+// CreateProject creates a project. repoPath may be a local directory or a
+// remote; it is kept as given and also sorted into RepoDir or RepoRemote.
 func (s *Service) CreateProject(id, name, repoPath string) error {
+	dir, remote := ClassifyRepo(repoPath)
 	return s.store.CreateProject(&Project{
-		ID:       strings.ToUpper(id),
-		Name:     name,
-		RepoPath: repoPath,
+		ID:         strings.ToUpper(id),
+		Name:       name,
+		RepoPath:   repoPath,
+		RepoDir:    dir,
+		RepoRemote: remote,
 	})
+}
+
+// PatchProject changes the settings p names and returns the project as it
+// then stands. A directory is trimmed; a remote is normalised.
+func (s *Service) PatchProject(id string, p ProjectPatch) (*Project, error) {
+	pr, err := s.project(id)
+	if err != nil {
+		return nil, err
+	}
+	if p.ArtifactPolicy.Set && !p.ArtifactPolicy.Value.Valid() {
+		return nil, fmt.Errorf("%w artifact policy %q: use remote, local, off, or empty for the default", ErrInvalid, p.ArtifactPolicy.Value)
+	}
+	if p.RepoDir.Set {
+		p.RepoDir.Value = strings.TrimSpace(p.RepoDir.Value)
+		if p.RepoDir.Value != "" && !looksLikeDir(p.RepoDir.Value) {
+			return nil, fmt.Errorf("%w directory %q: give a full path", ErrInvalid, p.RepoDir.Value)
+		}
+	}
+	if p.RepoRemote.Set {
+		p.RepoRemote.Value = NormalizeRemote(p.RepoRemote.Value)
+	}
+	if err := s.store.PatchProject(pr.ID, p); err != nil {
+		return nil, err
+	}
+	return s.store.GetProject(pr.ID)
+}
+
+// ProjectForDir finds the one project a working directory belongs to; see
+// MatchProject. remote is the clone's origin URL, or empty.
+func (s *Service) ProjectForDir(cwd, remote, home string) (*Project, error) {
+	projects, err := s.store.ListProjects()
+	if err != nil {
+		return nil, err
+	}
+	return MatchProject(projects, cwd, remote, home)
 }
 
 func (s *Service) ListProjects() ([]*Project, error) {
@@ -150,12 +190,8 @@ func (s *Service) GetProject(id string) (*Project, error) {
 }
 
 func (s *Service) SetSprintMode(projectID string, enabled bool) error {
-	p, err := s.project(projectID)
-	if err != nil {
-		return err
-	}
-	p.SprintMode = enabled
-	return s.store.UpdateProject(p)
+	_, err := s.PatchProject(projectID, ProjectPatch{SprintMode: To(enabled)})
+	return err
 }
 
 func (s *Service) CreateTask(title, description, projectID string, opts TaskCreateOpts) (*Task, error) {
@@ -465,6 +501,12 @@ func (s *Service) PatchTask(id string, p TaskPatch) (*Task, error) {
 	}
 	if p.SprintID.Set {
 		if err := s.checkSprint(t.ProjectID, p.SprintID.Value); err != nil {
+			return nil, err
+		}
+	}
+	if p.Branch.Set {
+		p.Branch.Value = strings.TrimSpace(p.Branch.Value)
+		if err := ValidBranchName(p.Branch.Value); err != nil {
 			return nil, err
 		}
 	}

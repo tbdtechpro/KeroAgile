@@ -12,6 +12,10 @@ import (
 
 // mockStore is a minimal in-memory Store for service tests.
 type mockStore struct {
+	// Store is nil: a method the mock does not define panics if a test
+	// reaches it, so new record methods need no stubs here.
+	domain.Store
+
 	projects map[string]*domain.Project
 	tasks    map[string]*domain.Task
 	users    map[string]*domain.User
@@ -56,6 +60,25 @@ func (m *mockStore) GetProject(id string) (*domain.Project, error) {
 }
 func (m *mockStore) UpdateProject(p *domain.Project) error {
 	m.projects[p.ID] = p
+	return nil
+}
+func (m *mockStore) PatchProject(id string, p domain.ProjectPatch) error {
+	pr, ok := m.projects[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	if p.RepoDir.Set {
+		pr.RepoDir = p.RepoDir.Value
+	}
+	if p.RepoRemote.Set {
+		pr.RepoRemote = p.RepoRemote.Value
+	}
+	if p.ArtifactPolicy.Set {
+		pr.ArtifactPolicy = p.ArtifactPolicy.Value
+	}
+	if p.SprintMode.Set {
+		pr.SprintMode = p.SprintMode.Value
+	}
 	return nil
 }
 func (m *mockStore) CreateTask(t *domain.Task) error {

@@ -224,8 +224,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		counts := a.buildCounts()
 		a.sidebar = NewSidebar(a.projects, counts, a.sidebarWidth(), a.height-3)
 		for _, p := range a.projects {
-			if p.RepoPath != "" {
-				a.gitClients[p.ID] = git.New(p.RepoPath)
+			if repo := git.ForProject(p); repo.Dir != "" {
+				a.gitClients[p.ID] = git.New(repo.Dir)
 			}
 		}
 		if len(a.projects) > 0 {
@@ -824,20 +824,20 @@ func (a App) pollCurrentTaskGit() tea.Cmd {
 	if task == nil || task.PRNumber == nil {
 		return nil
 	}
-	var repoPath string
+	var repo git.Repo
 	for _, p := range a.projects {
 		if p.ID == task.ProjectID {
-			repoPath = p.RepoPath
+			repo = git.ForProject(p)
 			break
 		}
 	}
-	if repoPath == "" {
+	if repo.Dir == "" && repo.Remote == "" {
 		return nil
 	}
 	prNum := *task.PRNumber
 	taskID := task.ID
 	return func() tea.Msg {
-		status, err := git.PRView(repoPath, prNum)
+		status, err := repo.PRView(prNum)
 		if err != nil {
 			return statusNotifMsg{fmt.Sprintf("PR check failed: %v", err)}
 		}
@@ -852,20 +852,20 @@ func (a App) pollPRs() []tea.Cmd {
 		if t.Status != domain.StatusReview || t.PRNumber == nil {
 			continue
 		}
-		var repoPath string
+		var repo git.Repo
 		for _, p := range a.projects {
 			if p.ID == t.ProjectID {
-				repoPath = p.RepoPath
+				repo = git.ForProject(p)
 				break
 			}
 		}
-		if repoPath == "" {
+		if repo.Dir == "" && repo.Remote == "" {
 			continue
 		}
 		prNum := *t.PRNumber
 		taskID := t.ID
 		cmds = append(cmds, func() tea.Msg {
-			status, err := git.PRView(repoPath, prNum)
+			status, err := repo.PRView(prNum)
 			if err != nil {
 				return statusNotifMsg{fmt.Sprintf("PR check failed: %v", err)}
 			}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -43,5 +44,17 @@ func newKeeper() (*artifacts.Keeper, error) {
 
 // newRemote builds the remote store the configuration names, or nil.
 func newRemote(a config.Artifacts) (artifacts.Remote, error) {
+	switch a.Remote {
+	case "s3":
+		c := cfg.Artifacts.S3
+		if c.Endpoint == "" || c.Bucket == "" {
+			return nil, fmt.Errorf("[artifacts.s3] needs endpoint and bucket")
+		}
+		creds, err := artifacts.LoadCredentials(c.Profile)
+		if err != nil {
+			return nil, err
+		}
+		return artifacts.NewS3(artifacts.S3Config{Endpoint: c.Endpoint, Region: c.Region, Bucket: c.Bucket, PathStyle: c.PathStyle}, creds), nil
+	}
 	return nil, nil
 }

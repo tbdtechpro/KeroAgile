@@ -285,7 +285,72 @@ this for each session's scratch folder; run it by hand for any other folder.`,
 	},
 }
 
+var artifactsSyncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Upload what is waiting to the remote store, then free space here",
+	Long: `Runs one pass of the uploader: uploads files of projects whose policy is
+remote, confirms each upload, and removes from this machine what it may to get
+back under local_max. KeroAgile serve does this every minute; only one process
+uploads at a time.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		k, err := keeperOrErr()
+		if err != nil {
+			return err
+		}
+		res, err := k.SyncOnce(context.Background())
+		if err != nil {
+			return err
+		}
+		if jsonFlag {
+			printJSON(res)
+		} else if res.Busy {
+			fmt.Println("another process is uploading; try again shortly")
+		} else {
+			fmt.Printf("uploaded %d files (%s), freed %d here\n", res.Uploaded, artifacts.HumanSize(res.Bytes), res.Evicted)
+		}
+		return nil
+	},
+}
+
+var artifactsPruneCmd = &cobra.Command{
+	Use:   "prune [--apply]",
+	Short: "List, or with --apply delete, remote files nothing has used for keep_unreferenced",
+	Long: `Lists the files on the remote store that no ticket has used for longer than
+keep_unreferenced (discarded, or their tickets deleted). Nothing is deleted
+from the remote unless you add --apply. Only files this machine uploaded are
+considered; the bucket is never listed.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		apply, _ := cmd.Flags().GetBool("apply")
+		k, err := keeperOrErr()
+		if err != nil {
+			return err
+		}
+		list, err := k.Prune(context.Background(), apply)
+		if err != nil {
+			return err
+		}
+		if jsonFlag {
+			printJSON(map[string]any{"applied": apply, "blobs": list})
+			return nil
+		}
+		var total int64
+		for _, b := range list {
+			total += b.Size
+			fmt.Printf("  %s  %s\n", b.SHA256[:16], artifacts.HumanSize(b.Size))
+		}
+		verb := "would delete"
+		if apply {
+			verb = "deleted"
+		}
+		fmt.Printf("%s %d files, %s, from the remote\n", verb, len(list), artifacts.HumanSize(total))
+		return nil
+	},
+}
+
 func init() {
+	artifactsPruneCmd.Flags().Bool("apply", false, "delete them from the remote")
 	artifactsSweepCmd.Flags().String("dir", "", "folder to sweep")
 	artifactsSweepCmd.Flags().String("session", "", "session ID to record")
 	artifactsSweepCmd.Flags().String("project", "", "project (default: the project of the working directory)")
@@ -296,6 +361,6 @@ func init() {
 	artifactsListCmd.Flags().Bool("unfiled", false, "only files on no ticket")
 	artifactsFetchCmd.Flags().String("to", "", "also copy the file here (must not exist)")
 	artifactsCmd.AddCommand(artifactsAttachCmd, artifactsListCmd, artifactsFetchCmd, artifactsFileCmd,
-		artifactsDiscardCmd, artifactsStatusCmd, artifactsSweepCmd)
+		artifactsDiscardCmd, artifactsStatusCmd, artifactsSweepCmd, artifactsSyncCmd, artifactsPruneCmd)
 	rootCmd.AddCommand(artifactsCmd)
 }

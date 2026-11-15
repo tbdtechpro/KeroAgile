@@ -3,11 +3,16 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/tbdtechpro/KeroAgile/internal/artifacts"
 )
 
 // Records — notes, links and files — are written to this server's own
 // database. They are not forwarded to a sync primary: the sync does not
 // carry them (KA-072).
+
+// SetFiles gives the server the keeper of files kept against tickets.
+func (s *Server) SetFiles(k *artifacts.Keeper) { s.files = k }
 
 func (s *Server) recordRoutes() {
 	s.mux.HandleFunc("POST /api/tasks/{id}/notes", s.auth(s.handleAddNote))

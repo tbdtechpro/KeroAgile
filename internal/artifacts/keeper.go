@@ -57,6 +57,9 @@ type Records interface {
 	KVGet(key string) (string, bool, error)
 	KVSet(key, value string) error
 	KVLease(key, holder string, ttl time.Duration, now time.Time) (bool, error)
+	KVInit(key, value string) (string, error)
+	KVRelease(key, holder string) error
+	ArtifactsForBlob(sha string) ([]*domain.Artifact, error)
 	RecordSkip(dir, reason string, at time.Time) error
 	ListSkips() ([]domain.SweepSkip, error)
 }

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tbdtechpro/KeroAgile/internal/api"
@@ -95,6 +97,21 @@ Configuration:
 					daemon.Start(synced, startCursor)
 					defer daemon.Stop() // stops SSE consumer goroutine
 				}
+			}
+		}
+
+		// Files kept against tickets: the uploader runs here, once a minute,
+		// when a remote store is configured.
+		keeper, kerr := newKeeper()
+		if kerr != nil {
+			log.Printf("files: [artifacts] configuration: %v", kerr)
+		} else {
+			apiSrv.SetFiles(keeper)
+			if keeper.Settings().Remote != nil {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				go keeper.RunUploader(ctx, time.Minute)
+				log.Printf("files: uploading to %s", keeper.Settings().Remote.Name())
 			}
 		}
 

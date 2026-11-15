@@ -167,6 +167,11 @@ func (s *Store) UpdateArtifact(id int64, p domain.ArtifactPatch) error {
 	return nil
 }
 
+// ArtifactsForBlob returns the artifacts, not discarded, that use sha.
+func (s *Store) ArtifactsForBlob(sha string) ([]*domain.Artifact, error) {
+	return s.queryArtifacts(`SELECT `+artifactCols+artifactFrom+` WHERE a.sha256 = ? AND a.discarded_at IS NULL ORDER BY a.id`, sha)
+}
+
 // BlobRefs counts the artifacts, not discarded, that use sha.
 func (s *Store) BlobRefs(sha string) (int, error) {
 	var n int
@@ -315,6 +320,23 @@ func (s *Store) KVSet(key, value string) error {
 	_, err := s.db.Exec(`INSERT INTO kv(key, value, updated_at) VALUES(?,?,?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 		key, value, stamp(time.Now().UTC()))
+	return err
+}
+
+// KVInit sets key to value unless it already has one, and returns the value
+// it holds. Two processes racing get the same answer.
+func (s *Store) KVInit(key, value string) (string, error) {
+	if _, err := s.db.Exec(`INSERT INTO kv(key, value, updated_at) VALUES(?,?,?) ON CONFLICT(key) DO NOTHING`,
+		key, value, stamp(time.Now().UTC())); err != nil {
+		return "", err
+	}
+	v, _, err := s.KVGet(key)
+	return v, err
+}
+
+// KVRelease gives up a lease, if holder holds it.
+func (s *Store) KVRelease(key, holder string) error {
+	_, err := s.db.Exec(`DELETE FROM kv WHERE key = ? AND substr(value, 1, instr(value, '|') - 1) = ?`, key, holder)
 	return err
 }
 

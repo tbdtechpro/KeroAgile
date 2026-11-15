@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAddNote, useTask } from '../api/queries'
 import FileList from './FileList'
+import FilePreview from './FilePreview'
 
 // TicketRecords shows what has accumulated on a ticket: its notes, links and
 // files. Listings leave these out, so it reads the ticket in full.
@@ -57,7 +58,7 @@ export default function TicketRecords({
       {files.length > 0 && (
         <div>
           <p className="text-xs mb-1" style={{ color: 'var(--ka-muted)' }}>Files ({files.length})</p>
-          <FileList files={files} onToast={onToast} />
+          <FileList files={files} onToast={onToast} renderExtra={a => <FilePreview file={a} />} />
         </div>
       )}
       <div>

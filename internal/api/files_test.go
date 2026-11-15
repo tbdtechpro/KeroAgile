@@ -177,3 +177,18 @@ func TestRecordRoutes_RefuseSyncTokens(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, w.Code, rt.path)
 	}
 }
+
+func TestArtifactContent_InlineForMedia(t *testing.T) {
+	f := newFilesFixture(t)
+	png := []byte("\x89PNG\r\n\x1a\nrest")
+	p := filepath.Join(f.work, "shot.png")
+	require.NoError(t, os.WriteFile(p, png, 0o644))
+	a, err := f.k.Attach("TST-001", p, "", "", "")
+	require.NoError(t, err)
+
+	w := f.get(t, f.signedURL(t, a.ID), nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "image/png", w.Header().Get("Content-Type"))
+	assert.True(t, strings.HasPrefix(w.Header().Get("Content-Disposition"), "inline"))
+	assert.Equal(t, "bytes", w.Header().Get("Accept-Ranges"), "video seeking needs ranges")
+}

@@ -44,7 +44,7 @@ func (s *Store) CreateTask(t *domain.Task) error {
 		nullableInt(t.PRNumber), boolInt(t.PRMerged),
 		strings.Join(t.Labels, ","),
 		t.CreatedAt.UTC().Format(time.RFC3339),
-		t.UpdatedAt.UTC().Format(time.RFC3339),
+		stamp(t.UpdatedAt),
 	)
 	return err
 }
@@ -142,7 +142,7 @@ func (s *Store) UpdateTask(t *domain.Task) error {
 		nullableInt(t.Points), nullableStr(t.AssigneeID), t.Branch,
 		nullableInt(t.PRNumber), boolInt(t.PRMerged),
 		strings.Join(t.Labels, ","),
-		t.UpdatedAt.UTC().Format(time.RFC3339),
+		stamp(t.UpdatedAt),
 		t.ID,
 	)
 	if err != nil {
@@ -453,4 +453,81 @@ func (s *Store) TaskCounts() (map[string]map[domain.Status]int, error) {
 		out[project][domain.Status(status)] = n
 	}
 	return out, rows.Err()
+}
+
+// stamp formats a ticket's update time. It keeps sub-second precision so that
+// "has this ticket changed since I read it" can tell two changes in the same
+// second apart. A whole-second time formats exactly as it always has, so
+// tickets written before this precision was kept still compare equal.
+func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+
+// PatchTask changes only the fields p names and records now as the ticket's
+// update time, in one UPDATE statement. Nothing is read first, so there is no
+// window in which another writer's change to a different field can be lost.
+func (s *Store) PatchTask(id string, p domain.TaskPatch, now time.Time) error {
+	var cols []string
+	var args []any
+	set := func(col string, v any) {
+		cols = append(cols, col+"=?")
+		args = append(args, v)
+	}
+	if p.Title.Set {
+		set("title", p.Title.Value)
+	}
+	if p.Description.Set {
+		set("description", p.Description.Value)
+	}
+	if p.Status.Set {
+		set("status", string(p.Status.Value))
+	}
+	if p.Priority.Set {
+		set("priority", string(p.Priority.Value))
+	}
+	if p.AssigneeID.Set {
+		set("assignee_id", nullableStr(p.AssigneeID.Value))
+	}
+	if p.Points.Set {
+		set("points", nullableInt(p.Points.Value))
+	}
+	if p.Labels.Set {
+		set("labels", strings.Join(p.Labels.Value, ","))
+	}
+	if p.SprintID.Set {
+		set("sprint_id", p.SprintID.Value)
+	}
+	if p.Branch.Set {
+		set("branch", p.Branch.Value)
+	}
+	if p.PRNumber.Set {
+		set("pr_number", nullableInt(p.PRNumber.Value))
+	}
+	if p.PRMerged.Set {
+		set("pr_merged", boolInt(p.PRMerged.Value))
+	}
+	set("updated_at", stamp(now))
+
+	query := `UPDATE tasks SET ` + strings.Join(cols, ",") + ` WHERE id=?`
+	args = append(args, id)
+	if p.IfUpdatedAt != nil {
+		query += ` AND updated_at=?`
+		args = append(args, stamp(*p.IfUpdatedAt))
+	}
+
+	res, err := s.db.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	// Nothing matched: either the ticket is gone, or it is there but its
+	// update time is no longer the one the caller read.
+	var exists int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE id=?`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if exists == 0 {
+		return domain.ErrNotFound
+	}
+	return fmt.Errorf("%w: %s has changed since it was read", domain.ErrConflict, id)
 }

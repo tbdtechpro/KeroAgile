@@ -612,13 +612,7 @@ func (a App) handleFormSaved(msg forms.SavedMsg) (tea.Model, tea.Cmd) {
 	if msg.IsNew {
 		return a, a.doCreateTask(msg, pid)
 	}
-	// find task in cache for edit
-	for _, t := range a.currentTasks {
-		if t.ID == msg.TaskID {
-			return a, a.doUpdateTask(msg, t)
-		}
-	}
-	return a, nil
+	return a, a.doUpdateTask(msg, pid)
 }
 
 func (a App) handleSprintFormSaved(msg forms.SprintSavedMsg) (tea.Model, tea.Cmd) {
@@ -666,56 +660,71 @@ func (a App) doCreateTask(msg forms.SavedMsg, projectID string) tea.Cmd {
 	}
 }
 
-func (a App) doUpdateTask(msg forms.SavedMsg, t *domain.Task) tea.Cmd {
-	updated := *t
-	updated.Title = msg.Title
-	updated.Description = msg.Description
-	updated.Priority = msg.Priority
-	updated.Status = msg.Status
-	updated.Labels = msg.Labels
-	updated.Points = msg.Points
-	updated.SprintID = msg.SprintID
-	if msg.AssigneeID != "" {
-		s := msg.AssigneeID
-		updated.AssigneeID = &s
-	} else {
-		updated.AssigneeID = nil
+// doUpdateTask saves an edit. Only the fields the user changed in the form are
+// sent, so everything else on the ticket keeps whatever the store holds now,
+// including changes agents made while the form was open.
+func (a App) doUpdateTask(msg forms.SavedMsg, projectID string) tea.Cmd {
+	taskID := msg.TaskID
+	c := msg.Changed
+
+	var p domain.TaskPatch
+	if c.Title {
+		p.Title = domain.To(msg.Title)
 	}
-	taskID := t.ID
-	projectID := t.ProjectID
-	oldBlockers := append([]string(nil), t.Blockers...)
-	oldBlocking := append([]string(nil), t.Blocking...)
-	newBlockedBy := msg.BlockedBy
-	newBlocks := msg.Blocks
+	if c.Description {
+		p.Description = domain.To(msg.Description)
+	}
+	if c.Priority {
+		p.Priority = domain.To(msg.Priority)
+	}
+	if c.Status {
+		p.Status = domain.To(msg.Status)
+	}
+	if c.Labels {
+		p.Labels = domain.To(msg.Labels)
+	}
+	if c.Points {
+		p.Points = domain.To(msg.Points)
+	}
+	if c.SprintID {
+		p.SprintID = domain.To(msg.SprintID)
+	}
+	if c.AssigneeID {
+		assignee := msg.AssigneeID // "" means nobody
+		p.AssigneeID = domain.To(&assignee)
+	}
 
 	return func() tea.Msg {
-		if _, err := a.svc.UpdateTask(&updated); err != nil {
+		if _, err := a.svc.PatchTask(taskID, p); err != nil {
 			return statusNotifMsg{fmt.Sprintf("error: %v", err)}
 		}
 
-		// Reconcile blocked-by (tasks that block this task)
-		add, remove := diffBlockers(oldBlockers, newBlockedBy)
-		for _, id := range remove {
-			if err := a.svc.RemoveDep(id, taskID); err != nil {
-				return statusNotifMsg{fmt.Sprintf("error removing blocker %s: %v", id, err)}
+		// Dependencies are reconciled against what the form showed when it
+		// opened, so only the links the user added or removed are touched.
+		if c.BlockedBy {
+			add, remove := diffBlockers(msg.BlockedByWas, msg.BlockedBy)
+			for _, id := range remove {
+				if err := a.svc.RemoveDep(id, taskID); err != nil {
+					return statusNotifMsg{fmt.Sprintf("error removing blocker %s: %v", id, err)}
+				}
+			}
+			for _, id := range add {
+				if err := a.svc.AddDep(id, taskID); err != nil {
+					return statusNotifMsg{fmt.Sprintf("error adding blocker %s: %v", id, err)}
+				}
 			}
 		}
-		for _, id := range add {
-			if err := a.svc.AddDep(id, taskID); err != nil {
-				return statusNotifMsg{fmt.Sprintf("error adding blocker %s: %v", id, err)}
+		if c.Blocks {
+			add, remove := diffBlockers(msg.BlocksWas, msg.Blocks)
+			for _, id := range remove {
+				if err := a.svc.RemoveDep(taskID, id); err != nil {
+					return statusNotifMsg{fmt.Sprintf("error removing block %s: %v", id, err)}
+				}
 			}
-		}
-
-		// Reconcile blocks (tasks that this task blocks)
-		add, remove = diffBlockers(oldBlocking, newBlocks)
-		for _, id := range remove {
-			if err := a.svc.RemoveDep(taskID, id); err != nil {
-				return statusNotifMsg{fmt.Sprintf("error removing block %s: %v", id, err)}
-			}
-		}
-		for _, id := range add {
-			if err := a.svc.AddDep(taskID, id); err != nil {
-				return statusNotifMsg{fmt.Sprintf("error adding block %s: %v", id, err)}
+			for _, id := range add {
+				if err := a.svc.AddDep(taskID, id); err != nil {
+					return statusNotifMsg{fmt.Sprintf("error adding block %s: %v", id, err)}
+				}
 			}
 		}
 

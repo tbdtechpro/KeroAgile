@@ -106,8 +106,10 @@ func toolList() []toolDef {
 			}, []string{"name"}),
 		},
 		{
-			Name:        "update_task",
-			Description: "Update an existing task's fields.",
+			Name: "update_task",
+			Description: "Change some fields of a ticket. Only the fields you pass are changed; everything else is left exactly as it is, including changes others have made since you read the ticket. " +
+				"Empty strings are ignored, so to empty a field name it in clear. " +
+				"Pass expected_updated_at (the updated_at from get_task) to have the update refused if the ticket has changed since you read it.",
 			InputSchema: obj(map[string]any{
 				"task_id":     str("Task ID (required)"),
 				"title":       str("New title"),
@@ -116,7 +118,14 @@ func toolList() []toolDef {
 				"status":      str("backlog|todo|in_progress|review|done"),
 				"assignee_id": str("Assignee user ID (empty string to clear)"),
 				"points":      map[string]any{"type": "integer", "description": "Story points"},
-				"labels":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Labels"},
+				"labels":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Labels; replaces the current list"},
+				"sprint_id":   map[string]any{"type": "integer", "description": "Sprint to put the ticket in (must belong to the ticket's project)"},
+				"clear": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string", "enum": clearable},
+					"description": "Fields to empty: description, points, labels, assignee_id, sprint_id",
+				},
+				"expected_updated_at": str("The updated_at you read from get_task. If the ticket has changed since, nothing is changed and the call fails; read it again and retry"),
 			}, []string{"task_id"}),
 		},
 		{
@@ -195,6 +204,9 @@ const (
 	defaultSearchLimit = 50
 	maxSearchLimit     = 200
 )
+
+// clearable lists the fields update_task can empty.
+var clearable = []string{"description", "points", "labels", "assignee_id", "sprint_id"}
 
 // projectRow is one project in list_projects.
 type projectRow struct {
@@ -505,42 +517,72 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if tid == "" {
 			return "", errors.New("task_id is required")
 		}
-		task, err := svc.GetTask(tid)
-		if err != nil {
-			return "", err
-		}
+		// Build a patch from what was passed. Fields left out are not sent to
+		// the store at all, so they keep whatever value it holds now.
+		var p domain.TaskPatch
+		named := map[string]bool{} // fields this call sets, to catch set-and-clear
 		if v := str("title"); v != "" {
-			task.Title = v
+			p.Title = domain.To(v)
 		}
 		if v := str("description"); v != "" {
-			task.Description = v
+			p.Description, named["description"] = domain.To(v), true
 		}
 		if v := str("priority"); v != "" {
-			task.Priority = domain.Priority(v)
+			p.Priority = domain.To(domain.Priority(v))
 		}
 		if v := str("status"); v != "" {
-			task.Status = domain.Status(v)
+			p.Status = domain.To(domain.Status(v))
 		}
 		if _, ok := args["assignee_id"]; ok {
-			if v := str("assignee_id"); v != "" {
-				task.AssigneeID = &v
-			} else {
-				task.AssigneeID = nil
-			}
+			v := str("assignee_id") // "" means nobody
+			p.AssigneeID, named["assignee_id"] = domain.To(&v), true
 		}
 		if pts, ok := args["points"].(float64); ok {
 			n := int(pts)
-			task.Points = &n
+			p.Points, named["points"] = domain.To(&n), true
 		}
 		if lbls, ok := args["labels"].([]any); ok {
-			task.Labels = nil
+			var labels []string
 			for _, l := range lbls {
 				if s, ok := l.(string); ok && s != "" {
-					task.Labels = append(task.Labels, s)
+					labels = append(labels, s)
+				}
+			}
+			p.Labels, named["labels"] = domain.To(labels), true
+		}
+		if id := int64Arg(args["sprint_id"]); id != nil {
+			p.SprintID, named["sprint_id"] = domain.To(id), true
+		}
+		if list, ok := args["clear"].([]any); ok {
+			for _, item := range list {
+				field, _ := item.(string)
+				if named[field] {
+					return "", fmt.Errorf("%s is both set and listed in clear", field)
+				}
+				switch field {
+				case "description":
+					p.Description = domain.To("")
+				case "points":
+					p.Points = domain.Clear[int]()
+				case "labels":
+					p.Labels = domain.To([]string(nil))
+				case "assignee_id":
+					p.AssigneeID = domain.Clear[string]()
+				case "sprint_id":
+					p.SprintID = domain.Clear[int64]()
+				default:
+					return "", fmt.Errorf("clear %q: only %s can be cleared", field, strings.Join(clearable, ", "))
 				}
 			}
 		}
-		updated, err := svc.UpdateTask(task)
+		if v := str("expected_updated_at"); v != "" {
+			when, err := time.Parse(time.RFC3339Nano, v)
+			if err != nil {
+				return "", fmt.Errorf("expected_updated_at %q: pass the updated_at exactly as get_task returned it", v)
+			}
+			p.IfUpdatedAt = &when
+		}
+		updated, err := svc.PatchTask(tid, p)
 		if err != nil {
 			return "", err
 		}

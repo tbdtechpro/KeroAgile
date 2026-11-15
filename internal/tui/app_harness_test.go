@@ -73,11 +73,13 @@ func (h *appHarness) run(cmd tea.Cmd) {
 	}
 }
 
-// key presses one key: "tab", "enter", "esc", "up", "down", or a character.
+// key presses one key: "tab", "enter", "esc", an arrow, "backspace", or a
+// character.
 func (h *appHarness) key(name string) {
 	named := map[string]tea.KeyType{
 		"tab": tea.KeyTab, "enter": tea.KeyEnter, "esc": tea.KeyEsc,
-		"up": tea.KeyUp, "down": tea.KeyDown,
+		"up": tea.KeyUp, "down": tea.KeyDown, "left": tea.KeyLeft, "right": tea.KeyRight,
+		"backspace": tea.KeyBackspace,
 	}
 	if k, ok := named[name]; ok {
 		h.send(tea.KeyMsg{Type: k})
@@ -110,4 +112,19 @@ func seedTickets(titles ...string) func(*domain.Service) {
 			_, _ = svc.CreateTask(title, "", "AA", domain.TaskCreateOpts{})
 		}
 	}
+}
+
+// keys presses name the given number of times.
+func (h *appHarness) keys(name string, times int) {
+	for range times {
+		h.key(name)
+	}
+}
+
+// ticket returns the stored ticket.
+func (h *appHarness) ticket(id string) *domain.Task {
+	h.t.Helper()
+	task, err := h.svc.GetTask(id)
+	require.NoError(h.t, err)
+	return task
 }

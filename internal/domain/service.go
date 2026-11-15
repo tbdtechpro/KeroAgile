@@ -14,6 +14,10 @@ var ErrNotFound = errors.New("not found")
 // the reason. Front ends report it as a validation error (CLI exit code 2).
 var ErrInvalid = errors.New("invalid")
 
+// ErrConflict means a conditional change was refused because the ticket has
+// changed since the caller read it. The caller should read it again.
+var ErrConflict = errors.New("conflict")
+
 type TaskCreateOpts struct {
 	Priority   Priority
 	Status     Status
@@ -250,42 +254,8 @@ func (s *Service) GetTask(id string) (*Task, error) {
 	return t, nil
 }
 
-func (s *Service) UpdateTask(t *Task) (*Task, error) {
-	if err := checkStatus(t.Status); err != nil {
-		return nil, err
-	}
-	if err := checkPriority(t.Priority); err != nil {
-		return nil, err
-	}
-	if t.AssigneeID != nil {
-		if err := s.checkAssignee(*t.AssigneeID); err != nil {
-			return nil, err
-		}
-	}
-	t.UpdatedAt = time.Now().UTC()
-	if err := s.store.UpdateTask(t); err != nil {
-		return nil, err
-	}
-	blockers, blocking, err := s.store.GetTaskDeps(t.ID)
-	if err != nil {
-		return nil, err
-	}
-	t.Blockers = blockers
-	t.Blocking = blocking
-	return t, nil
-}
-
 func (s *Service) MoveTask(id string, status Status) (*Task, error) {
-	if err := checkStatus(status); err != nil {
-		return nil, err
-	}
-	t, err := s.task(id)
-	if err != nil {
-		return nil, err
-	}
-	t.Status = status
-	t.UpdatedAt = time.Now().UTC()
-	return t, s.store.UpdateTask(t)
+	return s.PatchTask(id, TaskPatch{Status: To(status)})
 }
 
 func (s *Service) DeleteTask(id string) error {
@@ -301,34 +271,18 @@ func (s *Service) TaskByBranch(branch string) (*Task, error) {
 }
 
 func (s *Service) LinkBranch(taskID, branch string) error {
-	t, err := s.task(taskID)
-	if err != nil {
-		return err
-	}
-	t.Branch = branch
-	t.UpdatedAt = time.Now().UTC()
-	return s.store.UpdateTask(t)
+	_, err := s.PatchTask(taskID, TaskPatch{Branch: To(branch)})
+	return err
 }
 
 func (s *Service) LinkPR(taskID string, prNumber int) error {
-	t, err := s.task(taskID)
-	if err != nil {
-		return err
-	}
-	t.PRNumber = &prNumber
-	t.UpdatedAt = time.Now().UTC()
-	return s.store.UpdateTask(t)
+	_, err := s.PatchTask(taskID, TaskPatch{PRNumber: To(&prNumber)})
+	return err
 }
 
 func (s *Service) MarkPRMerged(taskID string) error {
-	t, err := s.task(taskID)
-	if err != nil {
-		return err
-	}
-	t.PRMerged = true
-	t.Status = StatusDone
-	t.UpdatedAt = time.Now().UTC()
-	return s.store.UpdateTask(t)
+	_, err := s.PatchTask(taskID, TaskPatch{PRMerged: To(true), Status: To(StatusDone)})
+	return err
 }
 
 func (s *Service) CreateSprint(name, projectID string, start, end *time.Time) (*Sprint, error) {
@@ -421,18 +375,7 @@ func (s *Service) SearchTasksWithHint(q string, limit int, hintProjectID string)
 // AssignTaskToSprint sets or clears the sprint assignment for a task.
 // sprintID == nil clears the assignment.
 func (s *Service) AssignTaskToSprint(taskID string, sprintID *int64) (*Task, error) {
-	t, err := s.task(taskID)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.checkSprint(t.ProjectID, sprintID); err != nil {
-		return nil, err
-	}
-	t.SprintID = sprintID
-	if err := s.store.UpdateTask(t); err != nil {
-		return nil, err
-	}
-	return t, nil
+	return s.PatchTask(taskID, TaskPatch{SprintID: Change[*int64]{Set: true, Value: sprintID}})
 }
 
 func (s *Service) GetActiveSprint(projectID string) (*Sprint, error) {
@@ -483,4 +426,57 @@ func (s *Service) FindTasks(q TaskQuery) ([]*Task, int, error) {
 // TaskCounts returns the number of tickets per project and status.
 func (s *Service) TaskCounts() (map[string]map[Status]int, error) {
 	return s.store.TaskCounts()
+}
+
+// PatchTask changes only the fields p names and returns the ticket as it then
+// stands. Every other field keeps whatever value the store holds at that
+// moment, so a change another writer made since the caller read the ticket is
+// never reverted. Set p.IfUpdatedAt to refuse the change (ErrConflict) when
+// the ticket has changed at all since it was read.
+//
+// This is the only way Service changes an existing ticket's fields.
+func (s *Service) PatchTask(id string, p TaskPatch) (*Task, error) {
+	t, err := s.task(id)
+	if err != nil {
+		return nil, err
+	}
+	if p.Title.Set && strings.TrimSpace(p.Title.Value) == "" {
+		return nil, fmt.Errorf("%w ticket: a title is required", ErrInvalid)
+	}
+	if p.Status.Set {
+		if err := checkStatus(p.Status.Value); err != nil {
+			return nil, err
+		}
+	}
+	if p.Priority.Set {
+		if err := checkPriority(p.Priority.Value); err != nil {
+			return nil, err
+		}
+	}
+	if p.AssigneeID.Set {
+		if p.AssigneeID.Value != nil && *p.AssigneeID.Value == "" {
+			p.AssigneeID.Value = nil // front ends send "" for "nobody"
+		}
+		if p.AssigneeID.Value != nil {
+			if err := s.checkAssignee(*p.AssigneeID.Value); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if p.SprintID.Set {
+		if err := s.checkSprint(t.ProjectID, p.SprintID.Value); err != nil {
+			return nil, err
+		}
+	}
+
+	if !p.Empty() {
+		err := s.store.PatchTask(t.ID, p, time.Now().UTC())
+		if errors.Is(err, ErrConflict) {
+			return nil, fmt.Errorf("%w: %s was changed by someone else after you read it; read it again and reapply your change", ErrConflict, t.ID)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return s.GetTask(t.ID)
 }

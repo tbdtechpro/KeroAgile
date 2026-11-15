@@ -35,6 +35,8 @@ internal/domain/    Pure types + service + Store interface (zero I/O, zero exter
 - `domain.Priority` — string type: `low | medium | high | critical`; has `.Label()`, `.Color()` methods
 - `domain.Service` — business logic; wraps `domain.Store`; all mutations go through Service; has `SearchTasks(q, limit)` and `SearchTasksWithHint(q, limit, hintProjectID)` pass-throughs
 - Validation lives in `domain.Service` and nowhere else, so it holds for the TUI, CLI, MCP and HTTP alike: status and priority must be known values; a ticket cannot block itself and a blocker link that would close a cycle is refused; an unknown project, ticket, assignee or sprint is `ErrNotFound` naming what is missing; project and ticket IDs are accepted in any letter case; a sprint must belong to the ticket's project. Rule violations wrap `domain.ErrInvalid`
+- `domain.TaskPatch` — the one way to change an existing ticket: each field is a `domain.Change[T]`, either left alone (zero value) or set with `domain.To(v)`; `domain.Clear[T]()` empties an optional field. `Service.PatchTask(id, p)` validates the named fields and the store applies them in a single `UPDATE`, so no field the caller did not name is ever written. Never read a ticket, modify the struct and write it back: that reverts whatever another writer changed in between. `MoveTask`, `LinkBranch`, `LinkPR`, `MarkPRMerged` and `AssignTaskToSprint` are one-field patches
+- `TaskPatch.IfUpdatedAt` makes a patch conditional on the ticket not having changed since the caller read it; a mismatch is `domain.ErrConflict` and nothing is written. The TUI does not use it yet (its form closes before the save completes, so a refusal would lose the typed text)
 - `domain.TaskQuery` — the one way to find tickets across projects: optional `Text` (ID, title or description), `ProjectID`, `Statuses`, `AssigneeID`, `Label`, `SprintID`, `Limit`. `Service.FindTasks(q)` returns the matching tickets (with blockers and blocking filled in) and the total that match; `Service.TaskCounts()` returns ticket counts per project and status
 - `store.Store` — SQLite implementation; compile-time checked: `var _ domain.Store = (*Store)(nil)`
 
@@ -45,6 +47,7 @@ internal/domain/    Pure types + service + Store interface (zero I/O, zero exter
 - Single writer per process: `db.SetMaxOpenConns(1)`. Many processes share the file (every `KeroAgile mcp`, the TUI, the CLI, `serve`), so `store.Open` puts its settings in the DSN, where every pooled connection gets them: `busy_timeout(5000)` (wait for another process's lock instead of failing with `database is locked`), `foreign_keys(1)`, `journal_mode(WAL)`
 - WAL keeps `keroagile.db-wal` and `keroagile.db-shm` next to the database. Back up with `sqlite3 <db> ".backup <dest>"`, never `cp`; when restoring a database file, move any `-wal`, `-shm` and `-journal` files aside first
 - Schema migrations: append-only in `internal/store/db.go` `schema` const; `migrate()` runs at startup
+- `updated_at` is written with sub-second precision (`stamp()` in `store/task.go`, RFC 3339 with nanoseconds) so `IfUpdatedAt` can tell apart two changes in the same second; rows written earlier hold whole seconds and still compare correctly. `store.UpdateTask` (whole row) remains only for sync replication, which applies a remote ticket's full state
 - `task_deps` table has `ON DELETE CASCADE` — deleting a task removes its dependency rows
 - `NextTaskSeq` uses INSERT + conflict update for race-free sequence generation
 
@@ -68,7 +71,8 @@ BubbleTea Elm architecture — value-type models, immutable updates:
 - `taskMovedMsg` is defined in `board.go` (where drag-and-drop emits it)
 - Form overlays: `App.blockerPicker *forms.BlockerPicker` (checked first), `App.sprintForm *forms.SprintForm`, `App.form *forms.TaskForm`; non-nil when open; all events route to active overlay first in that order
 - Blocker picker: pressing Enter on the Blocks/BlockedBy field in the task form opens `forms.BlockerPicker` — a fuzzy-search overlay over `Service.SearchTasksWithHint`; same debounce pattern (version counter + `tea.Tick(300ms)`) as PR polling
-- `diffBlockers(oldIDs, newIDs []string) (toAdd, toRemove []string)` in `app.go` — pure helper; `doUpdateTask` uses it to reconcile dep changes via `svc.AddDep`/`svc.RemoveDep`
+- The task form records what it held when it opened on a ticket (`TaskForm.opened`) and reports in `SavedMsg.Changed` which fields differ at submit. `doUpdateTask` sends a `TaskPatch` holding only those fields, so the rest of the ticket keeps whatever the store has, and a value the form cannot show in full (a description longer than the 99-line text box) is not written back unless edited. An untouched sprint box is not re-validated
+- `diffBlockers(oldIDs, newIDs []string) (toAdd, toRemove []string)` in `app.go` — pure helper; `doUpdateTask` uses it to reconcile dep changes via `svc.AddDep`/`svc.RemoveDep`, against the lists the form showed when it opened (`SavedMsg.BlocksWas` / `BlockedByWas`)
 - PR polling: 60-second `tea.Tick` in `Init()`, rescheduled each `tickMsg`
 - Mouse drag: `DragState` in `drag.go`; `computeSectionTops()` in `board.go` for hit-testing
 - `tea.WithMouseCellMotion()` is required for per-cell motion during drag
@@ -89,9 +93,15 @@ All domain structs have `json:"snake_case"` tags. Field names in JSON output:
 - `Project`: `id`, `name`, `repo_path`, `sprint_mode`
 - `User`: `id`, `display_name`, `is_agent`
 
+## HTTP API
+
+- `PATCH /api/tasks/{id}` builds one `TaskPatch` from the request (`taskPatchFromJSON` in `internal/api/handlers.go`): an absent field is left alone; `null` empties `assignee_id`, `points`, `sprint_id` and `labels`; a status change is applied together with the other fields. `expected_updated_at` (the `updated_at` the client read) makes it conditional
+- `statusFor(err)` maps service errors: `ErrInvalid` 400, `ErrNotFound` 404, `ErrConflict` 409
+
 ## MCP tools
 
 - `internal/mcp/tools.go` defines the tools; `CallTool` dispatches them over `domain.Service`
+- `update_task` changes only the fields passed. Empty strings are ignored (agents send them for fields they do not mean to touch); to empty a field, name it in `clear` (`description`, `points`, `labels`, `assignee_id`, `sprint_id`). It accepts `sprint_id`, and `expected_updated_at` from `get_task` for a conditional update
 - `list_tasks` (one project) and `search_tasks` (every project, or one) both go through `Service.FindTasks`, so their filters behave identically: `status` takes one status or `open` (everything not done), plus `assignee_id`, `label`, and for `list_tasks` `sprint_id`. `search_tasks` adds `query` and needs at least one criterion; with no query it is the cross-project view (for example `status=in_progress` with `assignee_id`). A mistyped status is an error, not an empty list
 - `list_projects` returns compact rows with `open` and `total` ticket counts
 - Listings (`list_tasks`, `search_tasks`, `get_sprint`) return one compact `taskRow` per ticket, without descriptions, as unindented JSON inside `{project_id, total, returned, tasks}`; when cut to `limit` (`list_tasks` default 200, max 500; `search_tasks` default 50, max 200) the reply adds `truncated` and a `hint`. `get_task` is the full view; `list_tasks` with `detail: "full"` includes descriptions

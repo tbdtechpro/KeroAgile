@@ -2,6 +2,7 @@ package forms
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -66,6 +67,10 @@ type TaskForm struct {
 	width  int
 	height int
 	err    string
+
+	// What the form held when it opened on an existing ticket.
+	opened       SavedMsg
+	openedSprint string // the sprint box's text
 }
 
 // SavedMsg is emitted when the form is submitted.
@@ -82,6 +87,21 @@ type SavedMsg struct {
 	BlockedBy   []string
 	IsNew       bool
 	TaskID      string
+
+	// For an edit: which fields differ from what the form showed when it
+	// opened, and the dependency lists as they were then. Only changed
+	// fields are saved, so the rest of the ticket keeps whatever the store
+	// holds, and a field the form cannot show in full (a description longer
+	// than the text box) is not written back unless it was edited.
+	Changed      ChangedFields
+	BlocksWas    []string
+	BlockedByWas []string
+}
+
+// ChangedFields says which fields were changed while the form was open.
+type ChangedFields struct {
+	Title, Description, AssigneeID, Priority, Points bool
+	Status, Labels, SprintID, Blocks, BlockedBy      bool
 }
 
 // CancelledMsg is emitted when the form is dismissed.
@@ -181,6 +201,9 @@ func New(projectID string, users []*domain.User, defaultID string, task *domain.
 		}
 		f.blocksInput.SetValue(strings.Join(task.Blocking, ", "))
 		f.blockedByIn.SetValue(strings.Join(task.Blockers, ", "))
+
+		f.opened = f.values()
+		f.openedSprint = strings.TrimSpace(f.sprintInput.Value())
 	}
 
 	return f
@@ -319,7 +342,10 @@ func (f TaskForm) validate() string {
 	if strings.TrimSpace(f.titleInput.Value()) == "" {
 		return "title is required"
 	}
-	if raw := strings.TrimSpace(f.sprintInput.Value()); raw != "" {
+	// Only a sprint the user typed is checked. The ticket's existing sprint
+	// is valid by definition, and the list it would be checked against is
+	// not loaded until the sprint panel has been opened.
+	if raw := strings.TrimSpace(f.sprintInput.Value()); raw != "" && (f.task == nil || raw != f.openedSprint) {
 		if err := f.resolveSprintID(raw); err != nil {
 			return err.Error()
 		}
@@ -327,7 +353,40 @@ func (f TaskForm) validate() string {
 	return ""
 }
 
+// buildSavedMsg is what the form reports on submit: its values and, for an
+// edit, which of them the user changed.
 func (f TaskForm) buildSavedMsg() SavedMsg {
+	msg := f.values()
+	if f.task == nil {
+		return msg
+	}
+	was := f.opened
+	msg.Changed = ChangedFields{
+		Title:       msg.Title != was.Title,
+		Description: msg.Description != was.Description,
+		AssigneeID:  msg.AssigneeID != was.AssigneeID,
+		Priority:    msg.Priority != was.Priority,
+		Points:      !sameValue(msg.Points, was.Points),
+		Status:      msg.Status != was.Status,
+		Labels:      !slices.Equal(msg.Labels, was.Labels),
+		SprintID:    !sameValue(msg.SprintID, was.SprintID),
+		Blocks:      !slices.Equal(msg.Blocks, was.Blocks),
+		BlockedBy:   !slices.Equal(msg.BlockedBy, was.BlockedBy),
+	}
+	msg.BlocksWas, msg.BlockedByWas = was.Blocks, was.BlockedBy
+	return msg
+}
+
+// sameValue compares two optional values.
+func sameValue[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// values reads the form's inputs.
+func (f TaskForm) values() SavedMsg {
 	msg := SavedMsg{
 		Title:       strings.TrimSpace(f.titleInput.Value()),
 		Description: f.descInput.Value(),

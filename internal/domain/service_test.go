@@ -3,6 +3,7 @@ package domain_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +20,8 @@ type mockStore struct {
 	deps     map[string][]string // blocked_id -> []blocker_id
 	blocking map[string][]string // blocker_id -> []blocked_id
 
-	lastQuery domain.TaskQuery // the query FindTasks was last called with
+	lastQuery domain.TaskQuery   // the query FindTasks was last called with
+	patches   []domain.TaskPatch // every patch PatchTask was called with
 }
 
 func newMock() *mockStore {
@@ -90,6 +92,53 @@ func (m *mockStore) TaskByBranch(branch string) (*domain.Task, error) {
 }
 func (m *mockStore) UpdateTask(t *domain.Task) error {
 	m.tasks[t.ID] = t
+	return nil
+}
+func (m *mockStore) PatchTask(id string, p domain.TaskPatch, now time.Time) error {
+	m.patches = append(m.patches, p)
+	t, ok := m.tasks[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	if p.IfUpdatedAt != nil && !p.IfUpdatedAt.Equal(t.UpdatedAt) {
+		return domain.ErrConflict
+	}
+	changed := *t
+	if p.Title.Set {
+		changed.Title = p.Title.Value
+	}
+	if p.Description.Set {
+		changed.Description = p.Description.Value
+	}
+	if p.Status.Set {
+		changed.Status = p.Status.Value
+	}
+	if p.Priority.Set {
+		changed.Priority = p.Priority.Value
+	}
+	if p.AssigneeID.Set {
+		changed.AssigneeID = p.AssigneeID.Value
+	}
+	if p.Points.Set {
+		changed.Points = p.Points.Value
+	}
+	if p.Labels.Set {
+		changed.Labels = p.Labels.Value
+	}
+	if p.SprintID.Set {
+		changed.SprintID = p.SprintID.Value
+	}
+	if p.Branch.Set {
+		changed.Branch = p.Branch.Value
+	}
+	if p.PRNumber.Set {
+		changed.PRNumber = p.PRNumber.Value
+	}
+	if p.PRMerged.Set {
+		changed.PRMerged = p.PRMerged.Value
+	}
+	changed.UpdatedAt = now
+	m.tasks[id] = &changed
 	return nil
 }
 func (m *mockStore) DeleteTask(id string) error {

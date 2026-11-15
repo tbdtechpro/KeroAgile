@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // TaskFilters narrows ListTasks results.
 type TaskFilters struct {
 	Status     *Status
@@ -33,6 +35,10 @@ type Store interface {
 	GetTask(id string) (*Task, error)
 	TaskByBranch(branch string) (*Task, error)
 	UpdateTask(t *Task) error
+	// PatchTask changes only the fields p names, in a single statement, and
+	// records now as the ticket's update time. It returns ErrNotFound for a
+	// missing ticket and ErrConflict when p.IfUpdatedAt no longer matches.
+	PatchTask(id string, p TaskPatch, now time.Time) error
 	DeleteTask(id string) error
 	GetTaskDeps(taskID string) (blockers, blocking []string, err error)
 	AddDep(blockerID, blockedID string) error

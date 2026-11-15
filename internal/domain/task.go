@@ -133,3 +133,45 @@ type TaskSummary struct {
 	ProjectID string `json:"project_id"`
 	Status    Status `json:"status"`
 }
+
+// Change says whether a field should change, and to what. The zero value
+// leaves the field alone.
+type Change[T any] struct {
+	Set   bool
+	Value T
+}
+
+// To returns a Change that sets a field to v.
+func To[T any](v T) Change[T] { return Change[T]{Set: true, Value: v} }
+
+// Clear returns a Change that empties an optional field.
+func Clear[T any]() Change[*T] { return Change[*T]{Set: true} }
+
+// TaskPatch changes some fields of a ticket and leaves every other field
+// exactly as it is in the store at that moment, including changes other
+// writers have made since the caller last read the ticket.
+type TaskPatch struct {
+	Title       Change[string]
+	Description Change[string]
+	Status      Change[Status]
+	Priority    Change[Priority]
+	AssigneeID  Change[*string] // nil clears
+	Points      Change[*int]    // nil clears
+	Labels      Change[[]string]
+	SprintID    Change[*int64] // nil takes the ticket out of its sprint
+	Branch      Change[string]
+	PRNumber    Change[*int]
+	PRMerged    Change[bool]
+
+	// IfUpdatedAt makes the patch conditional: it is applied only if the
+	// ticket's UpdatedAt still equals this value, which the caller read
+	// earlier. Otherwise the patch fails with ErrConflict and changes nothing.
+	IfUpdatedAt *time.Time
+}
+
+// Empty reports whether the patch names no field to change.
+func (p TaskPatch) Empty() bool {
+	return !(p.Title.Set || p.Description.Set || p.Status.Set || p.Priority.Set ||
+		p.AssigneeID.Set || p.Points.Set || p.Labels.Set || p.SprintID.Set ||
+		p.Branch.Set || p.PRNumber.Set || p.PRMerged.Set)
+}

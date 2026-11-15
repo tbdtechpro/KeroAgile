@@ -53,22 +53,6 @@ func TestCreateTaskRejectsAnUnknownStatusOrPriority(t *testing.T) {
 	assert.Empty(t, m.tasks, "nothing was stored")
 }
 
-func TestUpdateTaskRejectsAnUnknownStatusOrPriority(t *testing.T) {
-	svc, _ := boardWith(t, "a ticket")
-	task, err := svc.GetTask("KA-001")
-	require.NoError(t, err)
-
-	bad := *task
-	bad.Priority = "urgent"
-	_, err = svc.UpdateTask(&bad)
-	require.ErrorIs(t, err, domain.ErrInvalid)
-
-	bad = *task
-	bad.Status = "doing"
-	_, err = svc.UpdateTask(&bad)
-	require.ErrorIs(t, err, domain.ErrInvalid)
-}
-
 func TestCreateTaskNeedsATitle(t *testing.T) {
 	svc, _ := boardWith(t)
 

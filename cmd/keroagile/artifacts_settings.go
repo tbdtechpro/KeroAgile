@@ -55,6 +55,13 @@ func newRemote(a config.Artifacts) (artifacts.Remote, error) {
 			return nil, err
 		}
 		return artifacts.NewS3(artifacts.S3Config{Endpoint: c.Endpoint, Region: c.Region, Bucket: c.Bucket, PathStyle: c.PathStyle}, creds), nil
+	case "folder":
+		p := cfg.Artifacts.Folder.Path
+		if p == "" {
+			return nil, fmt.Errorf("[artifacts.folder] needs path")
+		}
+		home, _ := os.UserHomeDir()
+		return artifacts.NewFolder(domain.ExpandHome(p, home)), nil
 	}
 	return nil, nil
 }

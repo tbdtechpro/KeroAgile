@@ -37,3 +37,16 @@ func TestArtifactsSyncWithoutRemote(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no remote store")
 }
+
+func TestNewRemote_Folder(t *testing.T) {
+	dir := t.TempDir()
+	cfg = &config.Config{Artifacts: config.ArtifactsConfig{Remote: "folder", Folder: config.FolderConfig{Path: dir}}}
+	a, err := cfg.Artifacts.Resolved()
+	require.NoError(t, err)
+	r, err := newRemote(a)
+	require.NoError(t, err)
+	assert.Contains(t, r.Name(), dir)
+	cfg.Artifacts.Folder.Path = ""
+	_, err = newRemote(a)
+	require.Error(t, err)
+}

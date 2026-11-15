@@ -96,13 +96,13 @@ func StripControl(s string) string {
 	}, s)
 }
 
-// OneLine is StripControl without newlines and tabs: for names and other
-// text shown on a single line.
+// OneLine is StripControl with newlines and tabs turned into single spaces:
+// for names and other text shown on one line.
 func OneLine(s string) string {
-	return strings.Map(func(r rune) rune {
+	return strings.Join(strings.Fields(strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\t' {
-			return -1
+			return ' '
 		}
 		return r
-	}, StripControl(s))
+	}, StripControl(s))), " ")
 }

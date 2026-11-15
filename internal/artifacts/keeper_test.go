@@ -255,7 +255,7 @@ func TestNamesAndSkipsLoseControlCharacters(t *testing.T) {
 	f := newFixture(t, nil)
 	a, err := f.k.Attach("KA-001", f.file(t, "evil\x1b[2Jname\n.log", "x"), "", "", "")
 	require.NoError(t, err)
-	assert.Equal(t, "evil[2Jname.log", a.Name)
+	assert.Equal(t, "evil[2Jname .log", a.Name)
 	assert.Contains(t, a.SourcePath, "\x1b", "the source path stays exact, to find the file again")
 
 	require.NoError(t, f.k.RecordSkip("/home/u/\x1b]0;title\x07dir", "no project\x1b[31m"))

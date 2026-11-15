@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -36,7 +37,9 @@ var hookStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Run from a Claude Code Stop hook after every turn",
 	Long: `Keeps the files in the session's scratch folder as unfiled files of the
-project the session is working in. Reads the hook's JSON from standard input.
+project the session is working in, and links the commits and pull requests of
+the session's checkout to the tickets they name. Reads the hook's JSON from
+standard input.
 
 It always exits 0 and prints nothing, so it can never hold a turn open or
 put text in front of Claude; problems are shown by 'KeroAgile artifacts status'.`,
@@ -54,14 +57,27 @@ func runStopHook(stdin io.Reader) {
 		return
 	}
 	var in stopInput
-	if err := json.Unmarshal(raw, &in); err != nil || in.ScratchpadDir == "" || in.CWD == "" {
-		return // nothing to sweep, or not a hook's input
+	if err := json.Unmarshal(raw, &in); err != nil || in.CWD == "" {
+		return // not a hook's input
 	}
-	k, err := newKeeper()
-	if err != nil {
-		return // a bad [artifacts] section; status reports it
+	var errs []error
+	if in.ScratchpadDir != "" {
+		if k, err := newKeeper(); err == nil { // a bad [artifacts] section: status reports it
+			errs = append(errs, sweepSession(k, in))
+			defer func() { k.RecordHookError(errors.Join(errs...)) }()
+		}
 	}
-	k.RecordHookError(sweepSession(k, in))
+	// Link the commits and pull requests of the session's checkout.
+	ctx, cancel := context.WithTimeout(context.Background(), hookScanBudget)
+	defer cancel()
+	res, err := scanDir(ctx, in.CWD)
+	if err != nil && !errors.Is(err, domain.ErrNotFound) && !errors.Is(err, domain.ErrInvalid) &&
+		!strings.Contains(err.Error(), "not in a git checkout") {
+		errs = append(errs, fmt.Errorf("git scan: %w", err))
+	}
+	for _, w := range res.Warnings {
+		errs = append(errs, errors.New("git scan: "+w))
+	}
 }
 
 // sweepSession sweeps one session's scratch folder into its project.

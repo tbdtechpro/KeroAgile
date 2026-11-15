@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -110,4 +111,68 @@ func TestArtifactsSweepCommand(t *testing.T) {
 	out, err = runCLI(t, "artifacts", "list", "--project", "AA", "--unfiled")
 	require.NoError(t, err)
 	assert.Contains(t, out, "a.png")
+}
+
+func gitRepo(t *testing.T, dir string, msgs ...string) {
+	t.Helper()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	run("init", "-q", "-b", "main")
+	for _, m := range msgs {
+		run("commit", "-q", "--allow-empty", "-m", m)
+	}
+}
+
+func TestGitScanCommand(t *testing.T) {
+	root := isolate(t)
+	t.Setenv("PATH", onlyGit(t)) // never the user's own gh
+	work := filepath.Join(root, "work", "alpha")
+	gitRepo(t, work, "first (AA-001)")
+	_, err := runCLI(t, "project", "add", "AA", "Alpha", "--repo", work)
+	require.NoError(t, err)
+	_, err = runCLI(t, "task", "add", "a ticket", "--project", "AA")
+	require.NoError(t, err)
+
+	out, err := runCLI(t, "git", "scan", "--dir", filepath.Join(work))
+	require.NoError(t, err)
+	assert.Contains(t, out, `"commits": 1`)
+	out, err = runCLI(t, "task", "get", "AA-001")
+	require.NoError(t, err)
+	assert.Contains(t, out, "first (AA-001)")
+}
+
+func TestHookStop_ScansCommits(t *testing.T) {
+	root := isolate(t)
+	t.Setenv("PATH", onlyGit(t))
+	work := filepath.Join(root, "work", "alpha")
+	gitRepo(t, work, "fix (AA-001)")
+	_, err := runCLI(t, "project", "add", "AA", "Alpha", "--repo", work)
+	require.NoError(t, err)
+	_, err = runCLI(t, "task", "add", "a ticket", "--project", "AA")
+	require.NoError(t, err)
+
+	// No scratch folder: the scan still runs.
+	out, err := runCLIIn(t, hookInput(t, work, ""), "hook", "stop")
+	require.NoError(t, err)
+	assert.Empty(t, out)
+	out, err = runCLI(t, "task", "get", "AA-001")
+	require.NoError(t, err)
+	assert.Contains(t, out, `"kind": "commit"`)
+}
+
+// onlyGit is a PATH holding git and nothing else.
+func onlyGit(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	p, err := exec.LookPath("git")
+	require.NoError(t, err)
+	require.NoError(t, os.Symlink(p, filepath.Join(dir, "git")))
+	return dir
 }

@@ -77,3 +77,7 @@ func TestAddNote_DropsControlCharacters(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "red [31malert[0m\nline two\tok2J", n.Body)
 }
+
+func TestOneLine(t *testing.T) {
+	assert.Equal(t, "run gh auth login. Or set GH_TOKEN[0m", domain.OneLine("run gh auth login.\nOr set\tGH_TOKEN\x1b[0m"))
+}

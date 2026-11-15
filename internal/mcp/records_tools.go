@@ -58,7 +58,7 @@ func recordToolList() []toolDef {
 				"project_id":      strSchema("Project ID"),
 				"repo_dir":        strSchema("Local checkout directory"),
 				"repo_remote":     strSchema("Forge repository, e.g. github.com/owner/repo"),
-				"artifact_policy": strSchema("remote | local | off | default"),
+				"artifact_policy": strSchema("remote | local | off | default (empty strings are ignored)"),
 			}, "project_id"),
 		},
 		{
@@ -79,6 +79,7 @@ func recordToolList() []toolDef {
 				"task_id":    strSchema("A ticket's files"),
 				"project_id": strSchema("A project's files; with unfiled=true only those on no ticket"),
 				"unfiled":    map[string]any{"type": "boolean", "description": "Only files on no ticket (with project_id)"},
+				"limit":      map[string]any{"type": "integer", "description": "Most files to return (default 100, max 500). The reply says when the list was cut"},
 			}),
 		},
 		{
@@ -98,10 +99,11 @@ func recordToolList() []toolDef {
 		},
 		{
 			Name:        "discard_artifact",
-			Description: "Discard a kept file that is not worth keeping. The sweep will not keep the same file again.",
+			Description: "Discard kept files that are not worth keeping: one (artifact_id) or many (artifact_ids). The sweep will not keep the same files again.",
 			InputSchema: objSchema(map[string]any{
-				"artifact_id": map[string]any{"type": "integer", "description": "File ID"},
-			}, "artifact_id"),
+				"artifact_id":  map[string]any{"type": "integer", "description": "File ID"},
+				"artifact_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Several file IDs"},
+			}),
 		},
 	}
 }
@@ -183,15 +185,16 @@ func callRecordTool(env Env, name string, args map[string]any) (out string, ok b
 		if str("project_id") == "" {
 			return "", true, errors.New("project_id is required")
 		}
+		// Empty strings are ignored: agents send them for fields they do
+		// not mean to touch. "default" resets the policy.
 		var p domain.ProjectPatch
-		if v, ok := args["repo_dir"].(string); ok {
+		if v := str("repo_dir"); v != "" {
 			p.RepoDir = domain.To(v)
 		}
-		if v, ok := args["repo_remote"].(string); ok {
+		if v := str("repo_remote"); v != "" {
 			p.RepoRemote = domain.To(v)
 		}
-		if v, ok := args["artifact_policy"].(string); ok {
-			v = strings.ToLower(strings.TrimSpace(v))
+		if v := strings.ToLower(str("artifact_policy")); v != "" {
 			if v == "default" {
 				v = ""
 			}
@@ -210,10 +213,44 @@ func callRecordTool(env Env, name string, args map[string]any) (out string, ok b
 		if err != nil {
 			return "", true, err
 		}
-		out, err := compactJSON(map[string]any{"total": len(list), "files": artifactRows(list)})
+		limit := listLimit(args["limit"], 100, 500)
+		reply := map[string]any{"total": len(list)}
+		if len(list) > limit {
+			list = list[:limit]
+			reply["truncated"] = true
+			reply["hint"] = "file or discard these (discard_artifact takes artifact_ids for many at once), then list again; or raise limit (max 500)"
+		}
+		reply["returned"] = len(list)
+		reply["files"] = artifactRows(list)
+		out, err := compactJSON(reply)
 		return out, true, err
 
-	case "file_artifact", "discard_artifact", "fetch_artifact":
+	case "discard_artifact":
+		var ids []int64
+		if id, ok := intArg(args["artifact_id"]); ok {
+			ids = append(ids, id)
+		}
+		if many, ok := args["artifact_ids"].([]any); ok {
+			for _, v := range many {
+				id, ok := intArg(v)
+				if !ok {
+					return "", true, fmt.Errorf("artifact_ids: %v is not a file ID", v)
+				}
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
+			return "", true, errors.New("give artifact_id or artifact_ids")
+		}
+		for _, id := range ids {
+			if err := svc.DiscardArtifact(id); err != nil {
+				return "", true, err
+			}
+		}
+		out, err := compactJSON(map[string]any{"discarded": ids})
+		return out, true, err
+
+	case "file_artifact", "fetch_artifact":
 		id, ok := intArg(args["artifact_id"])
 		if !ok {
 			return "", true, errors.New("artifact_id is required: a file ID from list_artifacts or get_task")
@@ -225,12 +262,6 @@ func callRecordTool(env Env, name string, args map[string]any) (out string, ok b
 				return "", true, err
 			}
 			out, err := compactJSON(artifactRows([]*domain.Artifact{a})[0])
-			return out, true, err
-		case "discard_artifact":
-			if err := svc.DiscardArtifact(id); err != nil {
-				return "", true, err
-			}
-			out, err := compactJSON(map[string]any{"discarded": id})
 			return out, true, err
 		default:
 			if env.Files == nil {

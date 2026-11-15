@@ -267,10 +267,18 @@ func (s *Store) MarkUnreferenced(now time.Time) error {
 // room, in the order to remove it: first contents nothing uses, oldest first;
 // then contents the remote holds that are larger than keepLocalUnder, least
 // recently used first. Contents only held here are never offered.
-func (s *Store) EvictionCandidates(keepLocalUnder int64) ([]domain.Blob, error) {
+//
+// Contents no artifact has ever named (no row at all, not even a discarded
+// one) are spared until unrefBefore: a blob just taken in has no artifact
+// yet, and another process must not evict it in that moment. Discarded
+// contents can go at once, which is what discarding to make room needs.
+func (s *Store) EvictionCandidates(keepLocalUnder int64, unrefBefore time.Time) ([]domain.Blob, error) {
 	rows, err := s.db.Query(`SELECT `+blobCols+` FROM blobs WHERE in_local = 1 AND (
-			unreferenced_at IS NOT NULL OR (in_remote = 1 AND size > ?))
-		ORDER BY (unreferenced_at IS NULL), unreferenced_at, COALESCE(last_used_at, uploaded_at, ''), sha256`, keepLocalUnder)
+			(unreferenced_at IS NOT NULL AND (unreferenced_at < ?
+				OR EXISTS (SELECT 1 FROM artifacts a WHERE a.sha256 = blobs.sha256)))
+			OR (unreferenced_at IS NULL AND in_remote = 1 AND size > ?))
+		ORDER BY (unreferenced_at IS NULL), unreferenced_at, COALESCE(last_used_at, uploaded_at, ''), sha256`,
+		stamp(unrefBefore), keepLocalUnder)
 	if err != nil {
 		return nil, err
 	}

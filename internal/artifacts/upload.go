@@ -23,6 +23,12 @@ const (
 	// of a file still being worked on are not sent.
 	sweptSettle = 15 * time.Minute
 	kvInstallID = "install_id"
+	// evictGrace spares contents that only just stopped being used, or were
+	// only just taken in and have no artifact yet.
+	evictGrace = 10 * time.Minute
+	// staleTemp is how old a temp file must be before housekeeping removes
+	// it; younger ones may belong to an intake or download in progress.
+	staleTemp = time.Hour
 )
 
 // SyncResult is what one pass of the uploader did.
@@ -119,6 +125,7 @@ func (k *Keeper) syncHeld(ctx context.Context, holder string, res *SyncResult) e
 	if err != nil {
 		return err
 	}
+	var failed []error
 	for _, b := range cands {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -127,14 +134,20 @@ func (k *Keeper) syncHeld(ctx context.Context, holder string, res *SyncResult) e
 			return err
 		}
 		if err := k.upload(ctx, b); err != nil {
-			return fmt.Errorf("upload %s: %w", b.SHA256[:12], err) // the rest wait for the next pass
+			// One bad file must not hold up the rest; it is tried again
+			// next pass and reported meanwhile.
+			failed = append(failed, fmt.Errorf("upload %s: %w", b.SHA256[:12], err))
+			if len(failed) >= 3 && res.Uploaded == 0 {
+				break // the remote itself is likely down; stop knocking
+			}
+			continue
 		}
 		res.Uploaded++
 		res.Bytes += b.Size
 	}
 	n, err := k.evictDownTo(k.s.LocalMax)
 	res.Evicted = n
-	return err
+	return errors.Join(append(failed, err)...)
 }
 
 // upload sends one blob and marks it remote only once the remote confirms it
@@ -144,11 +157,11 @@ func (k *Keeper) upload(ctx context.Context, b domain.Blob) error {
 	if err != nil {
 		return err
 	}
+	if !k.localIntact(&b) {
+		return fmt.Errorf("the copy here is missing or damaged")
+	}
 	f, err := os.Open(k.BlobPath(b.SHA256))
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			_ = k.st.SetBlobLocal(b.SHA256, false)
-		}
 		return err
 	}
 	defer f.Close()
@@ -172,7 +185,7 @@ func (k *Keeper) evictDownTo(limit int64) (int, error) {
 	if err != nil || limit <= 0 || used <= limit {
 		return 0, err
 	}
-	cands, err := k.st.EvictionCandidates(k.s.KeepLocalUnder)
+	cands, err := k.st.EvictionCandidates(k.s.KeepLocalUnder, k.s.Now().Add(-evictGrace))
 	if err != nil {
 		return 0, err
 	}
@@ -213,8 +226,24 @@ func (k *Keeper) Housekeep() error {
 			return err
 		}
 	}
-	_ = os.RemoveAll(k.tmpDir()) // copies left by an interrupted intake
+	k.removeStaleTemp()
 	return nil
+}
+
+// removeStaleTemp removes temp files left by an intake or download that was
+// interrupted. Recent ones may belong to one still running in another
+// process, so only those older than staleTemp go.
+func (k *Keeper) removeStaleTemp() {
+	entries, err := os.ReadDir(k.tmpDir())
+	if err != nil {
+		return
+	}
+	cutoff := k.s.Now().Add(-staleTemp)
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(k.tmpDir(), e.Name()))
+		}
+	}
 }
 
 // download pulls a blob from the remote into the holding area, checking its
@@ -245,7 +274,7 @@ func (k *Keeper) download(ctx context.Context, b *domain.Blob) error {
 		tmp.Close()
 		return fmt.Errorf("%w: %s is stored on the remote, not reachable now: %v", ErrUnavailable, b.SHA256[:12], err)
 	}
-	if err := tmp.Close(); err != nil {
+	if err := syncClose(tmp); err != nil {
 		return err
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != b.SHA256 {
@@ -258,6 +287,7 @@ func (k *Keeper) download(ctx context.Context, b *domain.Blob) error {
 	if err := os.Rename(tmp.Name(), dest); err != nil {
 		return err
 	}
+	_ = os.Chmod(dest, 0o444)
 	return k.st.SetBlobLocal(b.SHA256, true)
 }
 

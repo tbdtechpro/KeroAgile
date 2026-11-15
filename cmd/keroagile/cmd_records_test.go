@@ -101,3 +101,26 @@ func TestTaskLink(t *testing.T) {
 	_, err = runCLI(t, "task", "link", "AA-001")
 	assert.Equal(t, 2, exitCode(err), "say what to link")
 }
+
+func TestArtifactsDiscardMany(t *testing.T) {
+	root := isolate(t)
+	_, err := runCLI(t, "project", "add", "AA", "Alpha")
+	require.NoError(t, err)
+	_, err = runCLI(t, "task", "add", "a ticket", "--project", "AA")
+	require.NoError(t, err)
+	var ids []string
+	for _, name := range []string{"a.log", "b.log"} {
+		p := filepath.Join(root, name)
+		require.NoError(t, os.WriteFile(p, []byte(name), 0o644))
+		out, err := runCLI(t, "artifacts", "attach", "AA-001", p)
+		require.NoError(t, err)
+		var a map[string]any
+		require.NoError(t, json.Unmarshal([]byte(out), &a))
+		ids = append(ids, fmt.Sprint(a["id"]))
+	}
+	_, err = runCLI(t, append([]string{"artifacts", "discard"}, ids...)...)
+	require.NoError(t, err)
+	out, err := runCLI(t, "artifacts", "list", "--task", "AA-001")
+	require.NoError(t, err)
+	assert.NotContains(t, out, ".log")
+}

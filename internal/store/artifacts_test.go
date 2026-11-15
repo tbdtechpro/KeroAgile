@@ -152,7 +152,7 @@ func TestBlobs_LocalBytesAndEvictionOrder(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(100+5000+6000+7000+50), total)
 
-	cands, err := s.EvictionCandidates(1000)
+	cands, err := s.EvictionCandidates(1000, now.Add(time.Minute))
 	require.NoError(t, err)
 	var order []string
 	for _, b := range cands {

@@ -181,21 +181,27 @@ var artifactsFileCmd = &cobra.Command{
 }
 
 var artifactsDiscardCmd = &cobra.Command{
-	Use:   "discard <file-id>",
-	Short: "Discard a file; the sweep will not keep it again",
-	Args:  cobra.ExactArgs(1),
+	Use:   "discard <file-id>...",
+	Short: "Discard files; the sweep will not keep them again",
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := artifactID(args[0])
-		if err != nil {
-			return err
+		var ids []int64
+		for _, a := range args {
+			id, err := artifactID(a)
+			if err != nil {
+				return err
+			}
+			ids = append(ids, id)
 		}
-		if err := svc.DiscardArtifact(id); err != nil {
-			return err
+		for _, id := range ids {
+			if err := svc.DiscardArtifact(id); err != nil {
+				return err
+			}
 		}
 		if jsonFlag {
-			printJSON(map[string]any{"discarded": id})
+			printJSON(map[string]any{"discarded": ids})
 		} else {
-			fmt.Printf("discarded file %d\n", id)
+			fmt.Printf("discarded %d files\n", len(ids))
 		}
 		return nil
 	},
@@ -225,6 +231,9 @@ var artifactsStatusCmd = &cobra.Command{
 		}
 		fmt.Printf("default policy %s\n", s.DefaultPolicy)
 		fmt.Printf("remote        %s\n", s.Remote)
+		if s.RemoteError != "" {
+			fmt.Printf("  not set up  %s\n", s.RemoteError)
+		}
 		if s.Remote != "none" {
 			fmt.Printf("  waiting     %d files, %s\n", s.WaitingFiles, artifacts.HumanSize(s.WaitingBytes))
 			if s.LastSync != "" {

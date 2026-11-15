@@ -89,7 +89,7 @@ func Run(ctx context.Context, svc *domain.Service, st Store, repo git.Repo, p *d
 		res.Commits, err = scanCommits(ctx, svc, st, c, repo.Dir, branch, repoName, ticket)
 	}
 	if due(st, "supersede:"+repo.Dir, supersedeEvery, now) && repoName != "" {
-		n, serr := markSuperseded(ctx, st, c, repoName)
+		n, serr := markSuperseded(ctx, st, c, repoName, "supersede-cursor:"+repoName)
 		res.Superseded = n
 		if serr != nil {
 			res.Warnings = append(res.Warnings, "superseded check: "+domain.OneLine(serr.Error()))
@@ -151,16 +151,34 @@ func scanCommits(ctx context.Context, svc *domain.Service, st Store, c *git.Clie
 	return n, nil
 }
 
-func markSuperseded(ctx context.Context, st Store, c *git.Client, repo string) (int, error) {
+// markSuperseded checks up to supersedeBatch commit links per run, carrying
+// on from where the last run stopped and wrapping round, so every link is
+// checked in turn however many there are.
+func markSuperseded(ctx context.Context, st Store, c *git.Client, repo, cursorKey string) (int, error) {
 	links, err := st.LinksByRepo(repo, domain.LinkCommit, "")
 	if err != nil {
 		return 0, err
 	}
-	if len(links) > supersedeBatch {
-		links = links[:supersedeBatch]
+	var after int64
+	if v, ok, _ := st.KVGet(cursorKey); ok {
+		after, _ = strconv.ParseInt(v, 10, 64)
+	}
+	start := 0
+	for start < len(links) && links[start].ID <= after {
+		start++
+	}
+	// Carry on after the cursor and wrap round to the start, so a batch
+	// covers every link when there are fewer than supersedeBatch.
+	rotated := append(append([]*domain.Link{}, links[start:]...), links[:start]...)
+	batch := rotated
+	if len(batch) > supersedeBatch {
+		batch = batch[:supersedeBatch]
+	}
+	if len(batch) > 0 {
+		_ = st.KVSet(cursorKey, strconv.FormatInt(batch[len(batch)-1].ID, 10))
 	}
 	n := 0
-	for _, l := range links {
+	for _, l := range batch {
 		gone, err := c.Orphaned(ctx, l.Ref)
 		if err != nil || !gone {
 			continue

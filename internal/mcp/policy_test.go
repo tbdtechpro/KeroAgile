@@ -75,3 +75,17 @@ func TestListProjects_ShowsEffectivePolicy(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, reply, `"effective_policy":"local"`)
 }
+
+// Review I6: agents send "" for fields they do not mean to touch.
+func TestSetProject_IgnoresEmptyStrings(t *testing.T) {
+	svc := testSvc(t)
+	require.NoError(t, svc.CreateProject("TST", "Test", "/work/tst"))
+	_, err := mcp.CallTool(svc, "set_project", map[string]any{"project_id": "TST", "artifact_policy": "local"})
+	require.NoError(t, err)
+	_, err = mcp.CallTool(svc, "set_project", map[string]any{"project_id": "TST", "repo_dir": "", "repo_remote": "", "artifact_policy": "", "repo_path": ""})
+	require.NoError(t, err)
+	p, err := svc.GetProject("TST")
+	require.NoError(t, err)
+	assert.Equal(t, "/work/tst", p.RepoDir)
+	assert.Equal(t, domain.PolicyLocal, p.ArtifactPolicy)
+}

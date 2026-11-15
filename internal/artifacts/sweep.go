@@ -158,8 +158,8 @@ func (k *Keeper) sweepFile(path string, info fs.FileInfo, in SweepInput) (string
 		return "", err
 	}
 	mtime := info.ModTime().UnixNano()
-	if latest != nil && latest.Size == info.Size() && latest.SourceMTime == mtime {
-		return "", nil
+	if latest != nil && latest.Size == info.Size() && latest.SourceMTime == mtime && latest.Where != domain.WhereUnavailable {
+		return "", nil // unchanged, and its contents are still held somewhere
 	}
 	got, err := k.ingest(path)
 	if err != nil {

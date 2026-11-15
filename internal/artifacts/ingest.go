@@ -111,7 +111,7 @@ func (k *Keeper) ingest(path string) (ingested, error) {
 	h := sha256.New()
 	n, err := io.Copy(io.MultiWriter(tmp, h), src)
 	src.Close()
-	if cerr := tmp.Close(); err == nil {
+	if cerr := syncClose(tmp); err == nil {
 		err = cerr
 	}
 	if err != nil {
@@ -120,13 +120,16 @@ func (k *Keeper) ingest(path string) (ingested, error) {
 	sha := hex.EncodeToString(h.Sum(nil))
 
 	dest := k.BlobPath(sha)
-	if _, err := os.Stat(dest); errors.Is(err, os.ErrNotExist) {
+	if fi, err := os.Stat(dest); err != nil || fi.Size() != n {
+		// Missing, or a damaged copy: put the fresh one in its place.
 		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 			return ingested{}, err
 		}
 		if err := os.Rename(tmp.Name(), dest); err != nil {
 			return ingested{}, err
 		}
+		// Kept files never change; fetch_artifact hands out this path.
+		_ = os.Chmod(dest, 0o444)
 	}
 	if err := k.st.PutBlob(domain.Blob{SHA256: sha, Size: n, InLocal: true}); err != nil {
 		return ingested{}, err
@@ -178,7 +181,7 @@ func (k *Keeper) ensureRoom(need int64, name string) error {
 	if err := k.st.MarkUnreferenced(k.s.Now()); err != nil {
 		return err
 	}
-	cands, err := k.st.EvictionCandidates(k.s.KeepLocalUnder)
+	cands, err := k.st.EvictionCandidates(k.s.KeepLocalUnder, k.s.Now().Add(-evictGrace))
 	if err != nil {
 		return err
 	}
@@ -214,15 +217,21 @@ func (k *Keeper) Fetch(ctx context.Context, id int64) (string, error) {
 		return "", err
 	}
 	path := k.BlobPath(b.SHA256)
-	if _, err := os.Stat(path); err == nil {
+	if k.localIntact(b) {
 		if !b.InLocal {
 			_ = k.st.SetBlobLocal(b.SHA256, true)
 		}
 		_ = k.st.TouchBlob(b.SHA256, k.s.Now())
 		return path, nil
 	}
-	if b.InLocal {
-		_ = k.st.SetBlobLocal(b.SHA256, false) // the record was wrong, e.g. after a restore
+	if !b.InRemote && k.s.Remote != nil {
+		// The record may predate the upload (a restored snapshot): ask.
+		if key, err := k.remoteKey(b.SHA256); err == nil {
+			if size, ok, err := k.s.Remote.Head(ctx, key); err == nil && ok && size == b.Size {
+				_ = k.st.SetBlobRemote(b.SHA256, k.s.Now())
+				b.InRemote = true
+			}
+		}
 	}
 	if k.s.Remote == nil || !b.InRemote {
 		return "", fmt.Errorf("%w: %s is not on this machine and not on a remote store (sha256 %s)", ErrUnavailable, a.Name, a.SHA256)
@@ -232,4 +241,34 @@ func (k *Keeper) Fetch(ctx context.Context, id int64) (string, error) {
 	}
 	_ = k.st.TouchBlob(b.SHA256, k.s.Now())
 	return path, nil
+}
+
+// localIntact reports whether this machine holds b's contents at their full
+// size. A missing or damaged copy (cut short by a power loss, say) is moved
+// aside and the record corrected, so it is neither served nor uploaded.
+func (k *Keeper) localIntact(b *domain.Blob) bool {
+	path := k.BlobPath(b.SHA256)
+	fi, err := os.Stat(path)
+	if err == nil && fi.Mode().IsRegular() && fi.Size() == b.Size {
+		return true
+	}
+	if err == nil {
+		_ = os.MkdirAll(k.tmpDir(), 0o700)
+		_ = os.Rename(path, filepath.Join(k.tmpDir(), "damaged-"+b.SHA256))
+	}
+	if b.InLocal {
+		_ = k.st.SetBlobLocal(b.SHA256, false)
+		b.InLocal = false
+	}
+	return false
+}
+
+// syncClose flushes f to disk and closes it, so a file renamed into the
+// holding area is whole even after a power loss.
+func syncClose(f *os.File) error {
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }

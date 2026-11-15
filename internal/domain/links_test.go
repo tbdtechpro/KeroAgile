@@ -13,7 +13,7 @@ func TestAddLink_Validates(t *testing.T) {
 	bad := []domain.Link{
 		{Kind: "issue", Ref: "1"},
 		{Kind: domain.LinkCommit, Ref: "xyz"},
-		{Kind: domain.LinkCommit, Ref: "abc12"},  // too short
+		{Kind: domain.LinkCommit, Ref: "abc12"}, // too short
 		{Kind: domain.LinkPR, Ref: "#12a"},
 		{Kind: domain.LinkBranch, Ref: "--evil"},
 		{Kind: domain.LinkTag, Ref: ""},

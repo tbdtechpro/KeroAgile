@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tbdtechpro/KeroAgile/internal/store"
 )
 
 func hookInput(t *testing.T, cwd, scratch string) string {
@@ -175,4 +176,26 @@ func onlyGit(t *testing.T) string {
 	require.NoError(t, err)
 	require.NoError(t, os.Symlink(p, filepath.Join(dir, "git")))
 	return dir
+}
+
+// Review I5: when the hook cannot keep files at all, the reason is recorded
+// where artifacts status shows it, instead of nothing happening silently.
+func TestHookStop_BadConfigIsRecorded(t *testing.T) {
+	root := isolate(t)
+	_, err := runCLI(t, "project", "add", "AA", "Alpha", "--repo", root)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "keroagile", "config.toml"), []byte("[artifacts]\nlocal_max = \"lots\"\n"), 0o600))
+	scratch := filepath.Join(root, "scratch")
+	oldFile(t, filepath.Join(scratch, "x.log"), "x")
+
+	out, err := runCLIIn(t, hookInput(t, root, scratch), "hook", "stop")
+	require.NoError(t, err)
+	assert.Empty(t, out)
+	db, err := store.Open(filepath.Join(root, "keroagile", "keroagile.db"))
+	require.NoError(t, err)
+	defer db.Close()
+	v, ok, err := store.New(db).KVGet("hook:last_error")
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Contains(t, v, "local_max")
 }

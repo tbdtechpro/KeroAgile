@@ -50,3 +50,28 @@ func TestNewRemote_Folder(t *testing.T) {
 	_, err = newRemote(a)
 	require.Error(t, err)
 }
+
+// Review I5: a remote that cannot be set up (no credentials yet) must not
+// switch off keeping files here; status says what is wrong.
+func TestNewKeeper_RemoteFailureKeepsLocalCapture(t *testing.T) {
+	root := isolate(t)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", "/nonexistent")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "keroagile"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "keroagile", "config.toml"), []byte(
+		"[artifacts]\nremote = \"s3\"\n[artifacts.s3]\nendpoint = \"http://127.0.0.1:1\"\nbucket = \"b\"\nprofile = \"missing\"\n"), 0o600))
+	_, err := runCLI(t, "project", "add", "AA", "Alpha")
+	require.NoError(t, err)
+	_, err = runCLI(t, "task", "add", "a ticket", "--project", "AA")
+	require.NoError(t, err)
+	p := filepath.Join(root, "x.log")
+	require.NoError(t, os.WriteFile(p, []byte("kept anyway"), 0o644))
+
+	_, err = runCLI(t, "artifacts", "attach", "AA-001", p)
+	require.NoError(t, err, "files are still kept here")
+	out, err := runCLI(t, "artifacts", "status")
+	require.NoError(t, err)
+	assert.Contains(t, out, `"remote_error"`)
+	assert.Contains(t, out, "missing")
+}

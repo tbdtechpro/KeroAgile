@@ -24,11 +24,11 @@ func newKeeper() (*artifacts.Keeper, error) {
 	}
 	home, _ := os.UserHomeDir()
 	dir = domain.ExpandHome(dir, home)
-	remote, err := newRemote(a)
-	if err != nil {
-		return nil, err
-	}
+	// A remote that cannot be set up (no credentials yet, say) must not
+	// stop files being kept here: run without it and report why.
+	remote, remoteErr := newRemote(a)
 	return artifacts.New(svc, st, artifacts.Settings{
+		RemoteErr:        remoteErr,
 		Dir:              dir,
 		LocalMax:         a.LocalMax,
 		MinFree:          a.MinFree,

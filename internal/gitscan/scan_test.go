@@ -214,3 +214,29 @@ func TestScan_GHFailureIsAWarning(t *testing.T) {
 	require.Len(t, res.Warnings, 1)
 	assert.Contains(t, res.Warnings[0], "not logged in")
 }
+
+// Review I7: the check for rewritten commits looked at the same 50 oldest
+// links every time, so later ones were never checked.
+func TestScan_SupersededCheckReachesEveryLink(t *testing.T) {
+	f := newFixture(t)
+	for i := 0; i < 55; i++ {
+		f.commit(t, fmt.Sprintf("c%d (KA-001)", i))
+	}
+	f.git(t, "checkout", "-q", "-b", "feat/late")
+	late := f.commit(t, "late (KA-001)")
+	f.run(t)
+	f.git(t, "checkout", "-q", "main")
+	f.git(t, "branch", "-q", "-D", "feat/late")
+
+	for i := 0; i < 3; i++ {
+		f.now = f.now.Add(2 * time.Hour)
+		f.run(t)
+	}
+	for _, l := range f.links(t, "KA-001") {
+		if l.Ref == late {
+			assert.Equal(t, domain.LinkSuperseded, l.State)
+			return
+		}
+	}
+	t.Fatal("no link for the late commit")
+}

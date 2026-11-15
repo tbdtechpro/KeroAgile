@@ -62,9 +62,13 @@ func runStopHook(stdin io.Reader) {
 	}
 	var errs []error
 	if in.ScratchpadDir != "" {
-		if k, err := newKeeper(); err == nil { // a bad [artifacts] section: status reports it
+		if k, err := newKeeper(); err == nil {
 			errs = append(errs, sweepSession(k, in))
 			defer func() { k.RecordHookError(errors.Join(errs...)) }()
+		} else if st != nil {
+			// A bad [artifacts] section: nothing can be kept. Say so where
+			// artifacts status looks, rather than failing silently.
+			_ = st.KVSet("hook:last_error", domain.OneLine(time.Now().UTC().Format(time.RFC3339)+": [artifacts] configuration: "+err.Error()))
 		}
 	}
 	// Link the commits and pull requests of the session's checkout.

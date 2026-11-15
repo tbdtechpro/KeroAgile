@@ -30,6 +30,7 @@ type Settings struct {
 	DefaultPolicy    domain.ArtifactPolicy
 	SweepSkip        []string // extra names (globs) the sweep leaves alone
 	Remote           Remote   // nil: no remote store
+	RemoteErr        error    // why the configured remote could not be set up, if it could not
 
 	// Seams for tests; nil means the real thing.
 	DiskFree func(dir string) (uint64, error)
@@ -47,7 +48,7 @@ type Records interface {
 	TouchBlob(sha string, at time.Time) error
 	LocalBytes() (int64, error)
 	MarkUnreferenced(now time.Time) error
-	EvictionCandidates(keepLocalUnder int64) ([]domain.Blob, error)
+	EvictionCandidates(keepLocalUnder int64, unrefBefore time.Time) ([]domain.Blob, error)
 	ListBlobs(cond string, args ...any) ([]domain.Blob, error)
 	BlobRefs(sha string) (int, error)
 	UpdateArtifact(id int64, p domain.ArtifactPatch) error
@@ -126,6 +127,7 @@ type Status struct {
 	LastSync      string             `json:"last_sync,omitempty"`
 	LastSyncError string             `json:"last_sync_error,omitempty"`
 	LastHookError string             `json:"last_hook_error,omitempty"`
+	RemoteError   string             `json:"remote_error,omitempty"`
 	SkippedSweeps []domain.SweepSkip `json:"skipped_sweeps,omitempty"`
 	DefaultPolicy string             `json:"default_policy"`
 }
@@ -150,6 +152,9 @@ func (k *Keeper) Status() (Status, error) {
 			st.WaitingBytes += b.Size
 			st.WaitingFiles++
 		}
+	}
+	if k.s.RemoteErr != nil {
+		st.RemoteError = domain.OneLine(k.s.RemoteErr.Error())
 	}
 	st.LastSync, _, _ = k.st.KVGet(kvLastSync)
 	st.LastSyncError, _, _ = k.st.KVGet(kvLastSyncError)

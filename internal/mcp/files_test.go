@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -91,4 +92,26 @@ func TestFileTools_WithoutKeeperSayWhy(t *testing.T) {
 	_, err := mcp.CallToolEnv(env, "attach_file", map[string]any{"task_id": "TST-001", "path": path})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not available")
+}
+
+// Review I8: a long unfiled list must fit in a tool result, and be
+// discardable in bulk.
+func TestListArtifacts_LimitAndBulkDiscard(t *testing.T) {
+	env, work := filesEnv(t)
+	var ids []any
+	for i := 0; i < 5; i++ {
+		p := filepath.Join(work, fmt.Sprintf("f%d.log", i))
+		require.NoError(t, os.WriteFile(p, []byte(fmt.Sprint(i)), 0o644))
+		a := callEnv(t, env, "attach_file", map[string]any{"task_id": "TST-001", "path": p})
+		ids = append(ids, a["id"])
+	}
+	list := callEnv(t, env, "list_artifacts", map[string]any{"task_id": "TST-001", "limit": float64(2)})
+	assert.EqualValues(t, 5, list["total"])
+	assert.EqualValues(t, 2, list["returned"])
+	assert.Equal(t, true, list["truncated"])
+	assert.NotEmpty(t, list["hint"])
+
+	callEnv(t, env, "discard_artifact", map[string]any{"artifact_ids": ids[:4]})
+	list = callEnv(t, env, "list_artifacts", map[string]any{"task_id": "TST-001"})
+	assert.EqualValues(t, 1, list["total"])
 }

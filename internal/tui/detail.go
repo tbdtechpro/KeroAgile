@@ -17,6 +17,7 @@ type Detail struct {
 	commits  []git.Commit
 	prStatus *git.PRStatus
 	users    map[string]*domain.User
+	unfiled  int // files kept for the ticket's project on no ticket
 	focused  bool
 	width    int
 	height   int
@@ -28,6 +29,12 @@ func NewDetail(width, height int) Detail {
 
 func (d Detail) SetTask(t *domain.Task) Detail {
 	d.task = t
+	return d
+}
+
+// SetUnfiled sets how many files the ticket's project holds on no ticket.
+func (d Detail) SetUnfiled(n int) Detail {
+	d.unfiled = n
 	return d
 }
 
@@ -170,6 +177,27 @@ func (d Detail) View() string {
 		}
 	}
 
+	if len(t.Artifacts) > 0 || d.unfiled > 0 {
+		sb.WriteString("\n" + styles.Muted.Render(fmt.Sprintf("Files (%d)", len(t.Artifacts))) + "\n")
+		for _, a := range t.Artifacts {
+			where := a.Where
+			style := styles.Muted
+			if where == domain.WhereUnavailable {
+				style = styles.Danger
+				if len(a.SHA256) >= 12 {
+					where += " " + a.SHA256[:12]
+				}
+			}
+			sb.WriteString(fmt.Sprintf("%s %s  %s\n",
+				styles.NormalRow.Render(truncate(a.Name, max(8, w-34))),
+				styles.Muted.Render(fmt.Sprintf("%s %s", a.Kind, humanSize(a.Size))),
+				style.Render(where)))
+		}
+		if d.unfiled > 0 {
+			sb.WriteString(styles.Muted.Render(fmt.Sprintf("%d unfiled in project · KeroAgile artifacts list --unfiled", d.unfiled)) + "\n")
+		}
+	}
+
 	if len(t.Blockers) > 0 {
 		sb.WriteString("\n" + styles.Muted.Render("Blocked by") + "\n")
 		if len(t.BlockerDetails) > 0 {
@@ -258,4 +286,18 @@ func formatBlockerChip(ts *domain.TaskSummary, currentProjectID string) string {
 		return fmt.Sprintf("[%s] %s · %s", ts.ProjectID, ts.ID, title)
 	}
 	return fmt.Sprintf("%s · %s", ts.ID, title)
+}
+
+// humanSize formats n bytes as "2.0 KiB".
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

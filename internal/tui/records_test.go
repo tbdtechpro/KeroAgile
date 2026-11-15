@@ -77,3 +77,29 @@ func TestApp_AddNoteWithUnknownUserIsUnsigned(t *testing.T) {
 	require.Len(t, got.Notes, 1)
 	assert.Equal(t, "", got.Notes[0].AuthorID)
 }
+
+func TestDetail_ShowsFiles(t *testing.T) {
+	task := ticketWithNotes(0)
+	tid := "AA-001"
+	task.Artifacts = []*domain.Artifact{
+		{ID: 7, TaskID: &tid, Name: "run.log", Kind: domain.KindLog, Size: 2048, Where: domain.WhereBoth, SHA256: "aaaa"},
+		{ID: 8, TaskID: &tid, Name: "demo.mp4", Kind: domain.KindVideo, Size: 5 << 20, Where: domain.WhereRemote, SHA256: "bbbb"},
+	}
+	view := tui.NewDetail(80, 30).SetTask(task).SetUnfiled(3).View()
+	assert.Contains(t, view, "Files (2)")
+	assert.Contains(t, view, "run.log")
+	assert.Contains(t, view, "2.0 KiB")
+	assert.Contains(t, view, "both")
+	assert.Contains(t, view, "demo.mp4")
+	assert.Contains(t, view, "remote")
+	assert.Contains(t, view, "3 unfiled")
+}
+
+func TestDetail_FilesUnavailableShowsHash(t *testing.T) {
+	task := ticketWithNotes(0)
+	task.Artifacts = []*domain.Artifact{{ID: 9, Name: "lost.png", Kind: domain.KindImage, Size: 10,
+		Where: domain.WhereUnavailable, SHA256: "0123456789abcdef0123"}}
+	view := tui.NewDetail(80, 30).SetTask(task).View()
+	assert.Contains(t, view, "unavailable")
+	assert.Contains(t, view, "0123456789ab")
+}

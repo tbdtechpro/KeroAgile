@@ -312,7 +312,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case taskRecordsMsg:
 		// Only the ticket on show, or none: the user may have moved on.
 		if cur := a.detail.TaskID(); cur == "" || cur == msg.task.ID {
-			a.detail = a.detail.SetTask(msg.task)
+			a.detail = a.detail.SetTask(msg.task).SetUnfiled(msg.unfiled)
 		}
 
 	case noteAddedMsg:
@@ -834,7 +834,8 @@ func (a App) loadRecords(id string) tea.Cmd {
 		if err != nil {
 			return nil
 		}
-		return taskRecordsMsg{task: t}
+		unfiled, _ := svc.ListArtifacts(domain.ArtifactQuery{ProjectID: t.ProjectID, Unfiled: true})
+		return taskRecordsMsg{task: t, unfiled: len(unfiled)}
 	}
 }
 

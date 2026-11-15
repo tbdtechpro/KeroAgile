@@ -29,6 +29,25 @@ export interface Task {
   created_at: string
   updated_at: string
   notes?: Note[]
+  artifacts?: Artifact[]
+}
+
+export type ArtifactKind = 'script' | 'log' | 'image' | 'audio' | 'video' | 'document' | 'other'
+
+export interface Artifact {
+  id: number
+  project_id: string
+  task_id: string | null
+  kind: ArtifactKind
+  name: string
+  media_type?: string
+  sha256: string
+  size: number
+  note?: string
+  origin: string
+  created_by?: string
+  created_at: string
+  where: 'here' | 'remote' | 'both' | 'unavailable'
 }
 
 export interface Note {

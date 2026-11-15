@@ -77,7 +77,10 @@ type jumpToTaskMsg struct{ taskID string }
 
 // taskRecordsMsg carries a ticket read in full, with its notes, links and
 // files, for the detail panel.
-type taskRecordsMsg struct{ task *domain.Task }
+type taskRecordsMsg struct {
+	task    *domain.Task
+	unfiled int // files of the ticket's project on no ticket
+}
 
 // noteAddedMsg reports a note saved from the note form.
 type noteAddedMsg struct{ taskID string }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAddNote, useTask } from '../api/queries'
+import FileList from './FileList'
 
 // TicketRecords shows what has accumulated on a ticket: its notes, links and
 // files. Listings leave these out, so it reads the ticket in full.
@@ -26,9 +27,16 @@ export default function TicketRecords({
   }
 
   const notes = task?.notes ?? []
+  const files = task?.artifacts ?? []
 
   return (
     <div className="flex flex-col gap-4">
+      {files.length > 0 && (
+        <div>
+          <p className="text-xs mb-1" style={{ color: 'var(--ka-muted)' }}>Files ({files.length})</p>
+          <FileList files={files} onToast={onToast} />
+        </div>
+      )}
       <div>
         <p className="text-xs mb-1" style={{ color: 'var(--ka-muted)' }}>
           Notes{notes.length > 0 ? ` (${notes.length})` : ''}

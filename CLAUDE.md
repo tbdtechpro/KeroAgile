@@ -91,6 +91,7 @@ BubbleTea Elm architecture — value-type models, immutable updates:
 - Board `View()` divider is `strings.Repeat("┄", min(b.width-2, 31))` — dynamic so it never exceeds the panel inner width at narrow split-screen sizes
 - Board `View()` strips the trailing `"\n"` from `content` before calling `Render()` — prevents lipgloss `Height()` (which acts as min-height) from expanding the board panel 1 row beyond the sidebar and detail panels
 - `Detail.View()` wraps its content to the panel width and cuts it to `height - 2` lines with `clipLines`, ending with `↓ N more lines`
+- The detail panel lists a ticket's files (name, kind, size, here / remote / both / unavailable with the hash) and how many unfiled files the project holds (`Detail.SetUnfiled`, loaded with the records)
 - Ticket records in the TUI: selecting a ticket shows the list's copy at once, then `loadRecords` reads it in full (`Service.GetTask`, with notes, links and files) and `taskRecordsMsg` replaces it if that ticket is still on show. `a` opens `forms.NoteForm` (overlay checked after the blocker picker): enter saves, ctrl+j starts a new line, esc cancels; the note is signed by the TUI's user when that user is on the board, otherwise unsigned
 - A panel taller than its allotted height makes `App.View()` taller than the terminal, and bubbletea then drops lines from the **top** of the screen (header and top borders vanish). Every panel must keep its content within `height - 2` lines itself
 - Sidebar lists scroll: `Sidebar.projScroll` / `sprintScroll` hold the first visible row. Each mode builds a `sidebarList{head, rows, foot}` (`projList()` / `sprintList()`), and `window()` is the single source of truth for which rows are on screen — `render`, `clampScroll`, `scrollBy` (mouse wheel) and `projectAtY` (click hit-testing) all call it, so they cannot disagree
@@ -107,6 +108,7 @@ All domain structs have `json:"snake_case"` tags. Field names in JSON output:
 ## HTTP API
 
 - `PATCH /api/tasks/{id}` builds one `TaskPatch` from the request (`taskPatchFromJSON` in `internal/api/handlers.go`): an absent field is left alone; `null` empties `assignee_id`, `points`, `sprint_id` and `labels`; a status change is applied together with the other fields. `expected_updated_at` (the `updated_at` the client read) makes it conditional
+- Records over HTTP (`internal/api/records.go`): `POST /api/tasks/{id}/notes`, `GET /api/projects/{id}/artifacts[?unfiled=1]`, `POST /api/artifacts/{id}/url` (a logged-in user gets a link good for 10 minutes: HMAC-SHA256 with the API secret over the file ID and expiry), and `GET /api/artifacts/{id}/content?exp=&sig=[&download=1]`, which takes no bearer token so `<a>`, `<img>` and `<video>` can load it, fetches from the remote if needed, supports ranges (`http.ServeContent`), and sends `nosniff` and a sandboxing CSP. `Server.SetFiles(keeper)` gives the API the keeper; `serve` does this
 - `statusFor(err)` maps service errors: `ErrInvalid` 400, `ErrNotFound` 404, `ErrConflict` 409
 
 ## MCP tools

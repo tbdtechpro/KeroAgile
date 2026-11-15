@@ -1,4 +1,4 @@
-import type { Note, Task, TaskSummary, Project, User, Sprint, SprintSummary, CreateTaskInput, UpdateTaskInput, Secondary } from './types'
+import type { Artifact, Note, Task, TaskSummary, Project, User, Sprint, SprintSummary, CreateTaskInput, UpdateTaskInput, Secondary } from './types'
 
 const TOKEN_KEY = 'keroagile_token'
 
@@ -106,6 +106,15 @@ export const api = {
 
   addNote(taskId: string, body: string): Promise<Note> {
     return request('POST', `/api/tasks/${taskId}/notes`, { body })
+  },
+
+  listArtifacts(projectId: string, unfiled: boolean): Promise<Artifact[]> {
+    return request('GET', `/api/projects/${projectId}/artifacts${unfiled ? '?unfiled=1' : ''}`)
+  },
+  // A link to one file, good for a few minutes, that a browser can load
+  // without the login header.
+  artifactURL(id: number): Promise<{ url: string }> {
+    return request('POST', `/api/artifacts/${id}/url`)
   },
 
   // Users

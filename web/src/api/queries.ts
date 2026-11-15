@@ -99,3 +99,11 @@ export function useAddNote() {
     onSuccess: (_note, { taskId }) => qc.invalidateQueries({ queryKey: keys.task(taskId) }),
   })
 }
+
+export function useUnfiledArtifacts(projectId: string | null) {
+  return useQuery({
+    queryKey: ['artifacts', projectId, 'unfiled'],
+    queryFn: () => api.listArtifacts(projectId!, true),
+    enabled: !!projectId,
+  })
+}

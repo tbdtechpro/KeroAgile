@@ -139,6 +139,7 @@ var taskGetCmd = &cobra.Command{
 		if len(t.Blockers) > 0 {
 			fmt.Printf("  Blockers: %s\n", strings.Join(t.Blockers, ", "))
 		}
+		printRecords(t)
 		return nil
 	},
 }

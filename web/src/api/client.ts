@@ -1,4 +1,4 @@
-import type { Task, TaskSummary, Project, User, Sprint, SprintSummary, CreateTaskInput, UpdateTaskInput, Secondary } from './types'
+import type { Note, Task, TaskSummary, Project, User, Sprint, SprintSummary, CreateTaskInput, UpdateTaskInput, Secondary } from './types'
 
 const TOKEN_KEY = 'keroagile_token'
 
@@ -102,6 +102,10 @@ export const api = {
 
   removeBlocker(taskId: string, blockerId: string): Promise<{ status: string }> {
     return request('DELETE', `/api/tasks/${taskId}/blockers/${blockerId}`)
+  },
+
+  addNote(taskId: string, body: string): Promise<Note> {
+    return request('POST', `/api/tasks/${taskId}/notes`, { body })
   },
 
   // Users

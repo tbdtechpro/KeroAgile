@@ -35,6 +35,7 @@ type App struct {
 	form               *forms.TaskForm
 	sprintForm         *forms.SprintForm
 	blockerPicker      *forms.BlockerPicker
+	noteForm           *forms.NoteForm
 	blockerPickerField string
 
 	projects         []*domain.Project
@@ -168,6 +169,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if a.noteForm != nil {
+		switch msg := msg.(type) {
+		case forms.NoteSavedMsg:
+			a.noteForm = nil
+			return a, a.doAddNote(msg.TaskID, msg.Body)
+		case forms.NoteCancelledMsg:
+			a.noteForm = nil
+			return a, nil
+		default:
+			m, cmd := a.noteForm.Update(msg)
+			nf := m.(forms.NoteForm)
+			a.noteForm = &nf
+			return a, cmd
+		}
+	}
+
 	if a.sprintForm != nil {
 		switch msg := msg.(type) {
 		case forms.SprintSavedMsg:
@@ -279,7 +296,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if t.ID == msg.taskID {
 				found = true
 				a.detail = a.detail.SetTask(t)
-				cmds = append(cmds, a.refreshGit(t))
+				cmds = append(cmds, a.refreshGit(t), a.loadRecords(t.ID))
 				break
 			}
 		}
@@ -291,6 +308,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Fix 7: wrap MoveTask in a cmd instead of calling synchronously
 		pid := a.sidebar.SelectedProjectID()
 		cmds = append(cmds, a.doMoveTask(msg.taskID, msg.status, pid))
+
+	case taskRecordsMsg:
+		// Only the ticket on show, or none: the user may have moved on.
+		if cur := a.detail.TaskID(); cur == "" || cur == msg.task.ID {
+			a.detail = a.detail.SetTask(msg.task)
+		}
+
+	case noteAddedMsg:
+		a.setStatus("noted on " + msg.taskID)
+		cmds = append(cmds, a.loadRecords(msg.taskID))
 
 	case gitRefreshedMsg:
 		a.detail = a.detail.SetCommits(msg.commits)
@@ -354,7 +381,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, t := range a.currentTasks {
 			if t.ID == msg.taskID {
 				a.detail = a.detail.SetTask(t)
-				cmds = append(cmds, a.refreshGit(t))
+				cmds = append(cmds, a.refreshGit(t), a.loadRecords(t.ID))
 				break
 			}
 		}
@@ -412,6 +439,12 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 		a.syncFocus()
 	case "n":
 		a.openNewForm()
+	case "a":
+		if id := a.board.SelectedTaskID(); id != "" {
+			nf := forms.NewNoteForm(id, a.width, a.height)
+			a.noteForm = &nf
+			cmds = append(cmds, nf.Init())
+		}
 	case "e":
 		if id := a.board.SelectedTaskID(); id != "" {
 			found := false
@@ -792,6 +825,33 @@ func diffBlockers(oldIDs, newIDs []string) (toAdd, toRemove []string) {
 	return
 }
 
+// loadRecords reads a ticket in full — notes, links and files included — for
+// the detail panel.
+func (a App) loadRecords(id string) tea.Cmd {
+	svc := a.svc
+	return func() tea.Msg {
+		t, err := svc.GetTask(id)
+		if err != nil {
+			return nil
+		}
+		return taskRecordsMsg{task: t}
+	}
+}
+
+// doAddNote adds a note signed by the TUI's user.
+func (a App) doAddNote(taskID, body string) tea.Cmd {
+	svc, author := a.svc, a.defaultAssignee
+	return func() tea.Msg {
+		if _, err := svc.GetUser(author); err != nil {
+			author = "" // not on the board: keep the note unsigned
+		}
+		if _, err := svc.AddNote(taskID, author, body); err != nil {
+			return statusNotifMsg{"note not saved: " + err.Error()}
+		}
+		return noteAddedMsg{taskID: taskID}
+	}
+}
+
 func (a App) refreshGit(t *domain.Task) tea.Cmd {
 	client, ok := a.gitClients[t.ProjectID]
 	branch := t.Branch
@@ -921,6 +981,10 @@ func (a App) View() string {
 
 	if a.blockerPicker != nil {
 		return a.blockerPicker.View()
+	}
+
+	if a.noteForm != nil {
+		return a.noteForm.View()
 	}
 
 	if a.sprintForm != nil {

@@ -185,4 +185,13 @@ CREATE TABLE IF NOT EXISTS sync_grants (
     project_id   TEXT NOT NULL REFERENCES projects(id)         ON DELETE CASCADE,
     PRIMARY KEY (secondary_id, project_id)
 );
+
+CREATE TABLE IF NOT EXISTS task_notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    author_id  TEXT NOT NULL DEFAULT '',
+    body       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes(task_id, id);
 `

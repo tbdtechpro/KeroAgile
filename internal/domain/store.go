@@ -54,6 +54,10 @@ type Store interface {
 	// TaskCounts returns the number of tickets per project and status.
 	TaskCounts() (map[string]map[Status]int, error)
 
+	// Notes
+	AddNote(n *Note) error
+	ListNotes(taskID string) ([]*Note, error)
+
 	// Sprints
 	CreateSprint(s *Sprint) (*Sprint, error)
 	ListSprints(projectID string) ([]*Sprint, error)

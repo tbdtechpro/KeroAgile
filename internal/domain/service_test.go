@@ -24,6 +24,9 @@ type mockStore struct {
 	deps     map[string][]string // blocked_id -> []blocker_id
 	blocking map[string][]string // blocker_id -> []blocked_id
 
+	notes   []*domain.Note
+	noteSeq int64
+
 	lastQuery domain.TaskQuery   // the query FindTasks was last called with
 	patches   []domain.TaskPatch // every patch PatchTask was called with
 }
@@ -375,4 +378,21 @@ func TestCrossProjectDep(t *testing.T) {
 	t2, err := svc.GetTask(ka.ID)
 	require.NoError(t, err)
 	assert.Contains(t, t2.Blockers, kcp.ID)
+}
+
+func (m *mockStore) AddNote(n *domain.Note) error {
+	m.noteSeq++
+	n.ID = m.noteSeq
+	m.notes = append(m.notes, n)
+	return nil
+}
+
+func (m *mockStore) ListNotes(taskID string) ([]*domain.Note, error) {
+	var out []*domain.Note
+	for _, n := range m.notes {
+		if n.TaskID == taskID {
+			out = append(out, n)
+		}
+	}
+	return out, nil
 }

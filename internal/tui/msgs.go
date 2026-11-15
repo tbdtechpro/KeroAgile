@@ -74,3 +74,10 @@ type addBlockerMsg struct{ blockerID, blockedID string }
 
 // jumpToTaskMsg asks the App to move the board cursor to the given task.
 type jumpToTaskMsg struct{ taskID string }
+
+// taskRecordsMsg carries a ticket read in full, with its notes, links and
+// files, for the detail panel.
+type taskRecordsMsg struct{ task *domain.Task }
+
+// noteAddedMsg reports a note saved from the note form.
+type noteAddedMsg struct{ taskID string }

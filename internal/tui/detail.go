@@ -31,6 +31,14 @@ func (d Detail) SetTask(t *domain.Task) Detail {
 	return d
 }
 
+// TaskID is the ticket on show, or "".
+func (d Detail) TaskID() string {
+	if d.task == nil {
+		return ""
+	}
+	return d.task.ID
+}
+
 func (d Detail) SetCommits(commits []git.Commit) Detail {
 	d.commits = commits
 	return d
@@ -146,6 +154,22 @@ func (d Detail) View() string {
 		}
 	}
 
+	if len(t.Notes) > 0 {
+		sb.WriteString("\n" + styles.Muted.Render(fmt.Sprintf("Notes (%d)", len(t.Notes))) + "\n")
+		for _, n := range t.Notes {
+			who := n.AuthorID
+			if u := d.users[who]; u != nil {
+				who = u.DisplayName
+			}
+			if who == "" {
+				who = "—"
+			}
+			sb.WriteString(styles.Muted.Render(n.CreatedAt.Local().Format("Jan 2 15:04")+"  ") +
+				lipgloss.NewStyle().Foreground(styles.CAccentLt).Render(who) + "\n")
+			sb.WriteString(styles.NormalRow.Render(n.Body) + "\n")
+		}
+	}
+
 	if len(t.Blockers) > 0 {
 		sb.WriteString("\n" + styles.Muted.Render("Blocked by") + "\n")
 		if len(t.BlockerDetails) > 0 {
@@ -194,8 +218,24 @@ func (d Detail) View() string {
 
 	panel := styles.PanelBorder(d.focused).
 		Width(d.width - 2).Height(d.height - 2).
-		Render(sb.String())
+		Render(clipLines(sb.String(), d.width-2, d.height-2))
 	return panel
+}
+
+// clipLines wraps content to width and keeps at most height lines, ending
+// with a count of what was cut. A panel taller than its height would push
+// the top of the screen off.
+func clipLines(content string, width, height int) string {
+	if width < 1 || height < 1 {
+		return ""
+	}
+	wrapped := lipgloss.NewStyle().Width(width).Render(strings.TrimRight(content, "\n"))
+	lines := strings.Split(wrapped, "\n")
+	if len(lines) <= height {
+		return wrapped
+	}
+	cut := len(lines) - (height - 1)
+	return strings.Join(lines[:height-1], "\n") + "\n" + styles.Muted.Render(fmt.Sprintf("↓ %d more lines", cut))
 }
 
 func detailField(label, value string) string {

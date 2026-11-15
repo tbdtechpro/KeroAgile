@@ -28,6 +28,15 @@ export interface Task {
   blocking_details?: TaskSummary[] | null
   created_at: string
   updated_at: string
+  notes?: Note[]
+}
+
+export interface Note {
+  id: number
+  task_id: string
+  author_id?: string
+  body: string
+  created_at: string
 }
 
 export interface Project {

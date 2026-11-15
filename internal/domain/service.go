@@ -287,6 +287,9 @@ func (s *Service) GetTask(id string) (*Task, error) {
 	}
 	t.Blockers = blockers
 	t.Blocking = blocking
+	if err := s.withRecords(t); err != nil {
+		return nil, err
+	}
 	return t, nil
 }
 

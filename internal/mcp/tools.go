@@ -28,7 +28,7 @@ func toolList() []toolDef {
 		return m
 	}
 
-	return []toolDef{
+	tools := []toolDef{
 		{
 			Name:        "list_projects",
 			Description: "List all KeroAgile projects, each with its open (not done) and total ticket counts.",
@@ -191,6 +191,7 @@ func toolList() []toolDef {
 			}, []string{"task_id"}),
 		},
 	}
+	return append(tools, recordToolList()...)
 }
 
 // A listing of a large project used to be several hundred kilobytes: every
@@ -734,6 +735,9 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		return toJSON(task)
 
 	default:
+		if out, ok, err := callRecordTool(svc, name, args); ok {
+			return out, err
+		}
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
 }

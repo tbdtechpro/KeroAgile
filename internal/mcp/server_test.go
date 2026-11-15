@@ -120,7 +120,26 @@ func TestToolsListCount(t *testing.T) {
 	require.Nil(t, resp.Error)
 	tools, ok := resp.Result.(map[string]any)["tools"]
 	require.True(t, ok)
-	require.Len(t, tools, 16) // 15 plus search_tasks
+	b, err := json.Marshal(tools)
+	require.NoError(t, err)
+	var defs []struct {
+		Name string `json:"name"`
+	}
+	require.NoError(t, json.Unmarshal(b, &defs))
+	require.GreaterOrEqual(t, len(defs), 17)
+
+	// Every listed tool has its own name and is one CallTool knows: a tool
+	// that is listed but not dispatched answers "unknown tool".
+	seen := map[string]bool{}
+	for _, d := range defs {
+		require.False(t, seen[d.Name], "tool %s listed twice", d.Name)
+		seen[d.Name] = true
+		_, err := mcp.CallTool(svc, d.Name, map[string]any{})
+		if err != nil {
+			require.NotContains(t, err.Error(), "unknown tool", d.Name)
+		}
+	}
+	require.True(t, seen["add_note"])
 }
 
 func TestRPCDispatch(t *testing.T) {

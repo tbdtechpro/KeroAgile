@@ -122,6 +122,9 @@ type Task struct {
 	BlockingDetails []*TaskSummary `json:"blocking_details,omitempty"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
+
+	// Filled by Service.GetTask only; listings leave them out.
+	Notes []*Note `json:"notes,omitempty"`
 }
 
 // TaskSummary is a lightweight task representation used in search results

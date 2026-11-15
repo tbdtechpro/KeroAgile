@@ -91,3 +91,11 @@ export function useRemoveBlocker() {
     },
   })
 }
+
+export function useAddNote() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, body }: { taskId: string; body: string }) => api.addNote(taskId, body),
+    onSuccess: (_note, { taskId }) => qc.invalidateQueries({ queryKey: keys.task(taskId) }),
+  })
+}

@@ -248,3 +248,19 @@ func TestStatus(t *testing.T) {
 }
 
 var _ = errors.Is
+
+// File names and directories are shown in terminals; escape sequences in
+// them would be obeyed.
+func TestNamesAndSkipsLoseControlCharacters(t *testing.T) {
+	f := newFixture(t, nil)
+	a, err := f.k.Attach("KA-001", f.file(t, "evil\x1b[2Jname\n.log", "x"), "", "", "")
+	require.NoError(t, err)
+	assert.Equal(t, "evil[2Jname.log", a.Name)
+	assert.Contains(t, a.SourcePath, "\x1b", "the source path stays exact, to find the file again")
+
+	require.NoError(t, f.k.RecordSkip("/home/u/\x1b]0;title\x07dir", "no project\x1b[31m"))
+	st, err := f.k.Status()
+	require.NoError(t, err)
+	assert.Equal(t, "/home/u/]0;titledir", st.SkippedSweeps[0].Dir)
+	assert.Equal(t, "no project[31m", st.SkippedSweeps[0].Reason)
+}

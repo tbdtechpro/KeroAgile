@@ -90,3 +90,14 @@ func StripControl(s string) string {
 		return r
 	}, s)
 }
+
+// OneLine is StripControl without newlines and tabs: for names and other
+// text shown on a single line.
+func OneLine(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return -1
+		}
+		return r
+	}, StripControl(s))
+}

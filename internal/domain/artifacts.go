@@ -121,6 +121,9 @@ func (s *Service) RecordArtifact(a *Artifact) error {
 	if !a.Kind.Valid() {
 		return fmt.Errorf("%w kind %q: use script, log, image, audio, video, document or other", ErrInvalid, a.Kind)
 	}
+	// Names are shown in terminals: no escape sequences, and one line.
+	a.Name = OneLine(a.Name)
+	a.Note = StripControl(a.Note)
 	if strings.TrimSpace(a.Name) == "" || a.SHA256 == "" {
 		return fmt.Errorf("%w file: a name and contents are required", ErrInvalid)
 	}

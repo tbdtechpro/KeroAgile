@@ -191,14 +191,14 @@ func (k *Keeper) sweepFile(path string, info fs.FileInfo, in SweepInput) (string
 // RecordSkip notes that a sweep of dir captured nothing, and why, so status
 // can show which directories are not covered.
 func (k *Keeper) RecordSkip(dir, reason string) error {
-	return k.st.RecordSkip(dir, reason, k.s.Now())
+	return k.st.RecordSkip(domain.OneLine(dir), domain.OneLine(reason), k.s.Now())
 }
 
 // RecordHookError keeps the last error of the Stop hook for status.
 func (k *Keeper) RecordHookError(err error) {
 	msg := ""
 	if err != nil {
-		msg = fmt.Sprintf("%s: %v", k.s.Now().Format(time.RFC3339), err)
+		msg = domain.OneLine(fmt.Sprintf("%s: %v", k.s.Now().Format(time.RFC3339), err))
 	}
 	_ = k.st.KVSet(kvLastHookError, msg)
 }

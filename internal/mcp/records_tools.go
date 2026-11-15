@@ -1,10 +1,14 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
@@ -34,12 +38,98 @@ func recordToolList() []toolDef {
 				"body":    strSchema("The note"),
 			}, "task_id", "body"),
 		},
+		{
+			Name: "attach_file",
+			Description: "Keep a file against a ticket: a test script, a log, a screenshot, audio or video produced while working it outside the repo. " +
+				"The file is copied in, so it survives the session's scratch folder being wiped. Files that belong in the repo are committed instead.",
+			InputSchema: objSchema(map[string]any{
+				"task_id": strSchema("Ticket ID, e.g. KA-008"),
+				"path":    strSchema("Path to the file on this machine"),
+				"kind":    strSchema("script, log, image, audio, video, document or other (default: from the file name)"),
+				"note":    strSchema("A caption: what the file is or shows"),
+			}, "task_id", "path"),
+		},
+		{
+			Name:        "list_artifacts",
+			Description: "List the files kept on a ticket, or a project's unfiled files (kept by the sweep, waiting to be filed on a ticket or discarded).",
+			InputSchema: objSchema(map[string]any{
+				"task_id":    strSchema("A ticket's files"),
+				"project_id": strSchema("A project's files; with unfiled=true only those on no ticket"),
+				"unfiled":    map[string]any{"type": "boolean", "description": "Only files on no ticket (with project_id)"},
+			}),
+		},
+		{
+			Name:        "fetch_artifact",
+			Description: "Get a kept file onto this machine and return its local path; files held only on the remote store are downloaded.",
+			InputSchema: objSchema(map[string]any{
+				"artifact_id": map[string]any{"type": "integer", "description": "File ID from list_artifacts or get_task"},
+			}, "artifact_id"),
+		},
+		{
+			Name:        "file_artifact",
+			Description: "Put a kept file (usually an unfiled one) on a ticket of its project.",
+			InputSchema: objSchema(map[string]any{
+				"artifact_id": map[string]any{"type": "integer", "description": "File ID"},
+				"task_id":     strSchema("Ticket ID"),
+			}, "artifact_id", "task_id"),
+		},
+		{
+			Name:        "discard_artifact",
+			Description: "Discard a kept file that is not worth keeping. The sweep will not keep the same file again.",
+			InputSchema: objSchema(map[string]any{
+				"artifact_id": map[string]any{"type": "integer", "description": "File ID"},
+			}, "artifact_id"),
+		},
 	}
+}
+
+// artifactRow is one file in get_task and list_artifacts.
+type artifactRow struct {
+	ID     int64               `json:"id"`
+	Name   string              `json:"name"`
+	Kind   domain.ArtifactKind `json:"kind"`
+	Size   int64               `json:"size"`
+	Where  string              `json:"where"`
+	TaskID *string             `json:"task_id,omitempty"`
+	Note   string              `json:"note,omitempty"`
+	Added  string              `json:"added"` // date only
+}
+
+func artifactRows(as []*domain.Artifact) []artifactRow {
+	rows := make([]artifactRow, len(as))
+	for i, a := range as {
+		rows[i] = artifactRow{ID: a.ID, Name: a.Name, Kind: a.Kind, Size: a.Size, Where: a.Where, TaskID: a.TaskID,
+			Note: a.Note, Added: a.CreatedAt.Format("2006-01-02")}
+	}
+	return rows
+}
+
+// taskView is get_task's reply: the ticket in full, with its files listed
+// compactly.
+type taskView struct {
+	*domain.Task
+	Artifacts []artifactRow `json:"artifacts,omitempty"`
+}
+
+func intArg(v any) (int64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int64(n), n == float64(int64(n))
+	case int:
+		return int64(n), true
+	case int64:
+		return n, true
+	case string:
+		i, err := strconv.ParseInt(strings.TrimSpace(n), 10, 64)
+		return i, err == nil
+	}
+	return 0, false
 }
 
 // callRecordTool runs one of the record tools. ok is false when name is not
 // one of them.
-func callRecordTool(svc *domain.Service, name string, args map[string]any) (out string, ok bool, err error) {
+func callRecordTool(env Env, name string, args map[string]any) (out string, ok bool, err error) {
+	svc := env.Svc
 	str := func(key string) string {
 		v, _ := args[key].(string)
 		return strings.TrimSpace(v)
@@ -56,8 +146,71 @@ func callRecordTool(svc *domain.Service, name string, args map[string]any) (out 
 		}
 		out, err := indentJSON(n)
 		return out, true, err
+
+	case "list_artifacts":
+		unfiled, _ := args["unfiled"].(bool)
+		list, err := svc.ListArtifacts(domain.ArtifactQuery{TaskID: str("task_id"), ProjectID: str("project_id"), Unfiled: unfiled})
+		if err != nil {
+			return "", true, err
+		}
+		out, err := compactJSON(map[string]any{"total": len(list), "files": artifactRows(list)})
+		return out, true, err
+
+	case "file_artifact", "discard_artifact", "fetch_artifact":
+		id, ok := intArg(args["artifact_id"])
+		if !ok {
+			return "", true, errors.New("artifact_id is required: a file ID from list_artifacts or get_task")
+		}
+		switch name {
+		case "file_artifact":
+			a, err := svc.FileArtifact(id, str("task_id"))
+			if err != nil {
+				return "", true, err
+			}
+			out, err := compactJSON(artifactRows([]*domain.Artifact{a})[0])
+			return out, true, err
+		case "discard_artifact":
+			if err := svc.DiscardArtifact(id); err != nil {
+				return "", true, err
+			}
+			out, err := compactJSON(map[string]any{"discarded": id})
+			return out, true, err
+		default:
+			if env.Files == nil {
+				return "", true, filesUnavailable(env)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			path, err := env.Files.Fetch(ctx, id)
+			if err != nil {
+				return "", true, err
+			}
+			out, err := compactJSON(map[string]any{"id": id, "path": path})
+			return out, true, err
+		}
+
+	case "attach_file":
+		if env.Files == nil {
+			return "", true, filesUnavailable(env)
+		}
+		if str("task_id") == "" || str("path") == "" {
+			return "", true, errors.New("task_id and path are required")
+		}
+		a, err := env.Files.Attach(str("task_id"), str("path"), domain.ArtifactKind(str("kind")), str("note"), authorID(svc))
+		if err != nil {
+			return "", true, err
+		}
+		out, err := compactJSON(artifactRows([]*domain.Artifact{a})[0])
+		return out, true, err
 	}
 	return "", false, nil
+}
+
+func filesUnavailable(env Env) error {
+	if env.FilesErr != nil {
+		return fmt.Errorf("keeping files is not available in this server: %w", env.FilesErr)
+	}
+	return errors.New("keeping files is not available in this server")
 }
 
 func indentJSON(v any) (string, error) {

@@ -22,9 +22,14 @@ Add to ~/.claude/settings.json for global Claude Code integration:
     }
   }
 
-KeroAgile auto-detects the active project from the git remote URL.
-Run 'KeroAgile project add --repo <remote-url>' to link a project.`,
+KeroAgile finds the active project from the working directory (the project
+whose directory holds it) or, failing that, the git remote. Set a project's
+directory with 'KeroAgile project set <id> --dir <path>'.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return mcp.Serve(svc)
+		env := mcp.Env{Svc: svc}
+		// A bad [artifacts] section must not take the whole server down:
+		// the file tools report it instead.
+		env.Files, env.FilesErr = newKeeper()
+		return mcp.Serve(env)
 	},
 }

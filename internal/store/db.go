@@ -194,4 +194,43 @@ CREATE TABLE IF NOT EXISTS task_notes (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes(task_id, id);
+
+CREATE TABLE IF NOT EXISTS blobs (
+    sha256          TEXT PRIMARY KEY,
+    size            INTEGER NOT NULL,
+    in_local        INTEGER NOT NULL DEFAULT 0,
+    in_remote       INTEGER NOT NULL DEFAULT 0,
+    uploaded_at     TEXT,
+    unreferenced_at TEXT,
+    last_used_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS artifacts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id   TEXT NOT NULL REFERENCES projects(id),
+    task_id      TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    media_type   TEXT NOT NULL DEFAULT '',
+    sha256       TEXT NOT NULL REFERENCES blobs(sha256),
+    size         INTEGER NOT NULL,
+    note         TEXT NOT NULL DEFAULT '',
+    origin       TEXT NOT NULL,
+    source_path  TEXT NOT NULL DEFAULT '',
+    source_mtime INTEGER NOT NULL DEFAULT 0,
+    session_id   TEXT NOT NULL DEFAULT '',
+    created_by   TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    discarded_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_artifacts_project_task ON artifacts(project_id, task_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_source_path ON artifacts(source_path);
+CREATE INDEX IF NOT EXISTS idx_artifacts_sha256 ON artifacts(sha256);
+
+CREATE TABLE IF NOT EXISTS kv (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 `

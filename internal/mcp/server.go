@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 
+	"github.com/tbdtechpro/KeroAgile/internal/artifacts"
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
 	"github.com/tbdtechpro/KeroAgile/internal/git"
 )
@@ -35,7 +36,15 @@ const (
 	codeAppError       = -32000
 )
 
-func Serve(svc *domain.Service) error {
+// Env is what the tools work on: the board, and the keeper of files kept
+// against tickets (nil when it could not be set up; FilesErr says why).
+type Env struct {
+	Svc      *domain.Service
+	Files    *artifacts.Keeper
+	FilesErr error
+}
+
+func Serve(env Env) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	enc := json.NewEncoder(os.Stdout)
@@ -45,15 +54,21 @@ func Serve(svc *domain.Service) error {
 			enc.Encode(Response{JSONRPC: "2.0", Error: &RPCError{Code: codeParseError, Message: err.Error()}}) //nolint:errcheck
 			continue
 		}
-		if resp := Dispatch(svc, req); resp != nil {
+		if resp := DispatchEnv(env, req); resp != nil {
 			enc.Encode(resp) //nolint:errcheck
 		}
 	}
 	return scanner.Err()
 }
 
-// Returns nil for JSON-RPC notifications that require no response.
+// Dispatch answers req with no file keeper.
 func Dispatch(svc *domain.Service, req Request) *Response {
+	return DispatchEnv(Env{Svc: svc}, req)
+}
+
+// DispatchEnv answers req. It returns nil for JSON-RPC notifications that
+// require no response.
+func DispatchEnv(env Env, req Request) *Response {
 	base := &Response{JSONRPC: "2.0", ID: req.ID}
 	switch req.Method {
 	case "initialize":
@@ -76,7 +91,7 @@ func Dispatch(svc *domain.Service, req Request) *Response {
 			base.Error = &RPCError{Code: codeInvalidReq, Message: err.Error()}
 			return base
 		}
-		result, err := CallTool(svc, p.Name, p.Arguments)
+		result, err := CallToolEnv(env, p.Name, p.Arguments)
 		if err != nil {
 			base.Error = &RPCError{Code: codeAppError, Message: err.Error()}
 			return base

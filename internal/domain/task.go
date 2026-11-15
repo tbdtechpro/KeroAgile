@@ -124,7 +124,8 @@ type Task struct {
 	UpdatedAt       time.Time      `json:"updated_at"`
 
 	// Filled by Service.GetTask only; listings leave them out.
-	Notes []*Note `json:"notes,omitempty"`
+	Notes     []*Note     `json:"notes,omitempty"`
+	Artifacts []*Artifact `json:"artifacts,omitempty"`
 }
 
 // TaskSummary is a lightweight task representation used in search results

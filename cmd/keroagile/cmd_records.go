@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/tbdtechpro/KeroAgile/internal/artifacts"
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
@@ -44,6 +45,12 @@ func printRecords(t *domain.Task) {
 			for _, line := range strings.Split(n.Body, "\n") {
 				fmt.Printf("      %s\n", line)
 			}
+		}
+	}
+	if len(t.Artifacts) > 0 {
+		fmt.Println("  Files:")
+		for _, a := range t.Artifacts {
+			fmt.Printf("    %-5d %-9s %-7s %-11s %s\n", a.ID, artifacts.HumanSize(a.Size), a.Kind, a.Where, a.Name)
 		}
 	}
 }

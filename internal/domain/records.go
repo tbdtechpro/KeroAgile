@@ -67,6 +67,11 @@ func (s *Service) withRecords(t *Task) error {
 		return err
 	}
 	t.Notes = notes
+	files, err := s.store.ListArtifacts(ArtifactQuery{TaskID: t.ID})
+	if err != nil {
+		return err
+	}
+	t.Artifacts = files
 	return nil
 }
 

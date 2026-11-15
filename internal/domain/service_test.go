@@ -396,3 +396,5 @@ func (m *mockStore) ListNotes(taskID string) ([]*domain.Note, error) {
 	}
 	return out, nil
 }
+
+func (m *mockStore) ListArtifacts(q domain.ArtifactQuery) ([]*domain.Artifact, error) { return nil, nil }

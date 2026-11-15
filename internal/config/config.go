@@ -24,6 +24,8 @@ type Config struct {
 	RemoteURL   string     `toml:"remote_url"`   // optional: connect to a remote KeroAgile server
 	RemoteToken string     `toml:"remote_token"` // bearer token for remote_url
 	Sync        SyncConfig `toml:"sync"`
+
+	Artifacts ArtifactsConfig `toml:"artifacts,omitempty"`
 }
 
 func DefaultPath() string {

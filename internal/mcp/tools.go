@@ -331,7 +331,14 @@ func compactJSON(v any) (string, error) {
 	return string(b), err
 }
 
+// CallTool runs a tool with no file keeper.
 func CallTool(svc *domain.Service, name string, args map[string]any) (string, error) {
+	return CallToolEnv(Env{Svc: svc}, name, args)
+}
+
+// CallToolEnv runs one tool.
+func CallToolEnv(env Env, name string, args map[string]any) (string, error) {
+	svc := env.Svc
 	str := func(key string) string {
 		if v, ok := args[key].(string); ok {
 			return strings.TrimSpace(v)
@@ -429,7 +436,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		if err != nil {
 			return "", err
 		}
-		return toJSON(task)
+		return toJSON(taskView{Task: task, Artifacts: artifactRows(task.Artifacts)})
 
 	case "create_task":
 		title := str("title")
@@ -735,7 +742,7 @@ func CallTool(svc *domain.Service, name string, args map[string]any) (string, er
 		return toJSON(task)
 
 	default:
-		if out, ok, err := callRecordTool(svc, name, args); ok {
+		if out, ok, err := callRecordTool(env, name, args); ok {
 			return out, err
 		}
 		return "", fmt.Errorf("unknown tool: %s", name)

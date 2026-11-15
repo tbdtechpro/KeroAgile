@@ -58,6 +58,13 @@ type Store interface {
 	AddNote(n *Note) error
 	ListNotes(taskID string) ([]*Note, error)
 
+	// Artifacts (files kept against tickets). The blob an artifact names must
+	// be recorded first; blob bookkeeping is the artifacts package's own.
+	AddArtifact(a *Artifact) error
+	GetArtifact(id int64) (*Artifact, error)
+	ListArtifacts(q ArtifactQuery) ([]*Artifact, error)
+	UpdateArtifact(id int64, p ArtifactPatch) error
+
 	// Sprints
 	CreateSprint(s *Sprint) (*Sprint, error)
 	ListSprints(projectID string) ([]*Sprint, error)

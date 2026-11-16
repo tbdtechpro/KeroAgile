@@ -24,6 +24,8 @@ type Config struct {
 	RemoteURL   string     `toml:"remote_url"`   // optional: connect to a remote KeroAgile server
 	RemoteToken string     `toml:"remote_token"` // bearer token for remote_url
 	Sync        SyncConfig `toml:"sync"`
+
+	Artifacts ArtifactsConfig `toml:"artifacts,omitempty"`
 }
 
 func DefaultPath() string {
@@ -54,10 +56,16 @@ func Save(cfg *Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-	f, err := os.Create(path)
+	// The file holds the secret that signs web sessions and the sync token,
+	// so only its owner may read it. Chmod tightens a file that already
+	// existed with wider permissions.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	if err := f.Chmod(0o600); err != nil {
+		return err
+	}
 	return toml.NewEncoder(f).Encode(cfg)
 }

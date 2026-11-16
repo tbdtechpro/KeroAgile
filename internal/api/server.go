@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tbdtechpro/KeroAgile/internal/artifacts"
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
 	"github.com/tbdtechpro/KeroAgile/internal/syncsrv"
 )
@@ -21,8 +22,9 @@ const (
 type Server struct {
 	svc        *domain.Service
 	store      syncsrv.PrimaryStore
-	rawStore   domain.Store          // for entity upserts during snapshot ingestion
-	syncClient *syncsrv.Client // non-nil on secondary installs; nil for standalone/primary
+	rawStore   domain.Store      // for entity upserts during snapshot ingestion
+	syncClient *syncsrv.Client   // non-nil on secondary installs; nil for standalone/primary
+	files      *artifacts.Keeper // nil until SetFiles
 	secret     string
 	syncMode   syncsrv.Mode
 	mux        *http.ServeMux
@@ -55,6 +57,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/search/tasks", s.auth(s.handleSearchTasks))
 	s.mux.HandleFunc("POST /api/tasks/{id}/blockers", s.auth(s.handleAddBlocker))
 	s.mux.HandleFunc("DELETE /api/tasks/{id}/blockers/{blocker_id}", s.auth(s.handleRemoveBlocker))
+
+	s.recordRoutes()
 
 	s.mux.HandleFunc("GET /api/users", s.auth(s.handleListUsers))
 

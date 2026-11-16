@@ -17,6 +17,7 @@ type Detail struct {
 	commits  []git.Commit
 	prStatus *git.PRStatus
 	users    map[string]*domain.User
+	unfiled  int // files kept for the ticket's project on no ticket
 	focused  bool
 	width    int
 	height   int
@@ -29,6 +30,20 @@ func NewDetail(width, height int) Detail {
 func (d Detail) SetTask(t *domain.Task) Detail {
 	d.task = t
 	return d
+}
+
+// SetUnfiled sets how many files the ticket's project holds on no ticket.
+func (d Detail) SetUnfiled(n int) Detail {
+	d.unfiled = n
+	return d
+}
+
+// TaskID is the ticket on show, or "".
+func (d Detail) TaskID() string {
+	if d.task == nil {
+		return ""
+	}
+	return d.task.ID
 }
 
 func (d Detail) SetCommits(commits []git.Commit) Detail {
@@ -146,6 +161,68 @@ func (d Detail) View() string {
 		}
 	}
 
+	if len(t.Notes) > 0 {
+		sb.WriteString("\n" + styles.Muted.Render(fmt.Sprintf("Notes (%d)", len(t.Notes))) + "\n")
+		for _, n := range t.Notes {
+			who := n.AuthorID
+			if u := d.users[who]; u != nil {
+				who = u.DisplayName
+			}
+			if who == "" {
+				who = "—"
+			}
+			sb.WriteString(styles.Muted.Render(n.CreatedAt.Local().Format("Jan 2 15:04")+"  ") +
+				lipgloss.NewStyle().Foreground(styles.CAccentLt).Render(who) + "\n")
+			sb.WriteString(styles.NormalRow.Render(n.Body) + "\n")
+		}
+	}
+
+	if len(t.Links) > 0 {
+		sb.WriteString("\n" + styles.Muted.Render(fmt.Sprintf("Links (%d)", len(t.Links))) + "\n")
+		for _, l := range t.Links {
+			ref := l.Ref
+			switch {
+			case l.Kind == domain.LinkCommit && len(ref) > 7:
+				ref = ref[:7]
+			case l.Kind == domain.LinkPR:
+				ref = "#" + ref
+			}
+			state := ""
+			if l.State != "" {
+				st := styles.Muted
+				if l.State == "merged" {
+					st = lipgloss.NewStyle().Foreground(styles.CGreen)
+				}
+				state = "  " + st.Render(l.State)
+			}
+			sb.WriteString(fmt.Sprintf("%s %s %s%s\n",
+				styles.Muted.Render(fmt.Sprintf("%-6s", l.Kind)),
+				lipgloss.NewStyle().Foreground(styles.CAccentLt).Render(ref),
+				styles.NormalRow.Render(truncate(l.Title, max(8, w-30))), state))
+		}
+	}
+
+	if len(t.Artifacts) > 0 || d.unfiled > 0 {
+		sb.WriteString("\n" + styles.Muted.Render(fmt.Sprintf("Files (%d)", len(t.Artifacts))) + "\n")
+		for _, a := range t.Artifacts {
+			where := a.Where
+			style := styles.Muted
+			if where == domain.WhereUnavailable {
+				style = styles.Danger
+				if len(a.SHA256) >= 12 {
+					where += " " + a.SHA256[:12]
+				}
+			}
+			sb.WriteString(fmt.Sprintf("%s %s  %s\n",
+				styles.NormalRow.Render(truncate(a.Name, max(8, w-34))),
+				styles.Muted.Render(fmt.Sprintf("%s %s", a.Kind, humanSize(a.Size))),
+				style.Render(where)))
+		}
+		if d.unfiled > 0 {
+			sb.WriteString(styles.Muted.Render(fmt.Sprintf("%d unfiled in project · KeroAgile artifacts list --unfiled", d.unfiled)) + "\n")
+		}
+	}
+
 	if len(t.Blockers) > 0 {
 		sb.WriteString("\n" + styles.Muted.Render("Blocked by") + "\n")
 		if len(t.BlockerDetails) > 0 {
@@ -194,8 +271,24 @@ func (d Detail) View() string {
 
 	panel := styles.PanelBorder(d.focused).
 		Width(d.width - 2).Height(d.height - 2).
-		Render(sb.String())
+		Render(clipLines(sb.String(), d.width-2, d.height-2))
 	return panel
+}
+
+// clipLines wraps content to width and keeps at most height lines, ending
+// with a count of what was cut. A panel taller than its height would push
+// the top of the screen off.
+func clipLines(content string, width, height int) string {
+	if width < 1 || height < 1 {
+		return ""
+	}
+	wrapped := lipgloss.NewStyle().Width(width).Render(strings.TrimRight(content, "\n"))
+	lines := strings.Split(wrapped, "\n")
+	if len(lines) <= height {
+		return wrapped
+	}
+	cut := len(lines) - (height - 1)
+	return strings.Join(lines[:height-1], "\n") + "\n" + styles.Muted.Render(fmt.Sprintf("↓ %d more lines", cut))
 }
 
 func detailField(label, value string) string {
@@ -218,4 +311,18 @@ func formatBlockerChip(ts *domain.TaskSummary, currentProjectID string) string {
 		return fmt.Sprintf("[%s] %s · %s", ts.ProjectID, ts.ID, title)
 	}
 	return fmt.Sprintf("%s · %s", ts.ID, title)
+}
+
+// humanSize formats n bytes as "2.0 KiB".
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

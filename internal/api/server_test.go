@@ -407,3 +407,42 @@ func TestAddAndRemoveBlocker(t *testing.T) {
 	rr = authed(http.MethodPost, "/api/tasks/FAKE-999/blockers", addBody)
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 }
+
+// Project IDs are accepted in any letter case. The gate that sends writes for
+// a synced project to its primary must resolve the ID the same way the write
+// does; otherwise "tl" would slip past the gate and be written locally.
+func TestSyncedProjectWriteIsProxiedWhateverTheLetterCase(t *testing.T) {
+	var received []string
+	fakePrimary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = append(received, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"id": "TL-002"})
+	}))
+	defer fakePrimary.Close()
+
+	_, svc, st := newTestServer(t)
+	client := syncsrv.NewClient(syncsrv.ClientConfig{PrimaryURL: fakePrimary.URL, APIToken: "tok"}, st)
+	srv := api.New(svc, st, st, "test-secret", syncsrv.ModeSecondary, client)
+	require.NoError(t, svc.CreateProject("TL", "TestLog", ""))
+	require.NoError(t, st.SetSyncOrigin("TL", fakePrimary.URL))
+	token := loginTestUser(t, srv, svc)
+
+	for _, path := range []string{"/api/tasks", "/api/sprints"} {
+		body := `{"project_id":"tl","title":"lower case","name":"lower case"}`
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		srv.ServeHTTP(w, req)
+
+		assert.Contains(t, received, "POST "+path, "the write went to the primary")
+	}
+
+	local, err := svc.ListTasks("TL", domain.TaskFilters{})
+	require.NoError(t, err)
+	assert.Empty(t, local, "nothing was written to the local copy of the synced project")
+	sprints, err := svc.ListSprints("TL")
+	require.NoError(t, err)
+	assert.Empty(t, sprints, "no sprint was created locally")
+}

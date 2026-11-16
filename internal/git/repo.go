@@ -3,6 +3,8 @@ package git
 import (
 	"fmt"
 	"strings"
+
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 type Commit struct {
@@ -18,11 +20,14 @@ func (c *Client) CurrentBranch() (string, error) {
 
 // CommitLog returns the last n commits on the given branch.
 func (c *Client) CommitLog(branch string, n int) ([]Commit, error) {
+	if err := domain.ValidBranchName(branch); err != nil {
+		return nil, err
+	}
 	out, err := c.execGit(
-		"log", branch,
-		"--oneline",
+		"log",
 		"-"+fmt.Sprintf("%d", n),
 		`--format=%h|||%s|||%cr`,
+		"--end-of-options", branch,
 	)
 	if err != nil || out == "" {
 		return nil, err

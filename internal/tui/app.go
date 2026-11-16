@@ -35,6 +35,7 @@ type App struct {
 	form               *forms.TaskForm
 	sprintForm         *forms.SprintForm
 	blockerPicker      *forms.BlockerPicker
+	noteForm           *forms.NoteForm
 	blockerPickerField string
 
 	projects         []*domain.Project
@@ -52,6 +53,15 @@ type App struct {
 
 	spinner spinner.Model
 	loading bool
+
+	pendingDelete *pendingDelete
+}
+
+// pendingDelete is a delete that waits for the user to confirm it with y.
+type pendingDelete struct {
+	taskID    string
+	title     string
+	projectID string
 }
 
 // New creates the App. Call Run() to start the BubbleTea event loop.
@@ -63,6 +73,8 @@ func New(svc *domain.Service, defaultAssignee string) *App {
 		gitClients:      make(map[string]*git.Client),
 		spinner:         sp,
 		defaultAssignee: defaultAssignee,
+		// A zero-value Board has unbuilt text inputs, which panic on Focus.
+		board: NewBoard(nil, 0, 0),
 	}
 }
 
@@ -157,6 +169,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if a.noteForm != nil {
+		switch msg := msg.(type) {
+		case forms.NoteSavedMsg:
+			a.noteForm = nil
+			return a, a.doAddNote(msg.TaskID, msg.Body)
+		case forms.NoteCancelledMsg:
+			a.noteForm = nil
+			return a, nil
+		default:
+			m, cmd := a.noteForm.Update(msg)
+			nf := m.(forms.NoteForm)
+			a.noteForm = &nf
+			return a, cmd
+		}
+	}
+
 	if a.sprintForm != nil {
 		switch msg := msg.(type) {
 		case forms.SprintSavedMsg:
@@ -187,6 +215,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if key, ok := msg.(tea.KeyMsg); ok && a.pendingDelete != nil {
+		return a.answerDeleteConfirm(key)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
@@ -194,7 +226,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.relayout()
 
 	case tea.KeyMsg:
-		cmds = append(cmds, a.handleKey(msg)...)
+		// While the board's filter or block-by bar is open, keys are text for
+		// that bar, not hotkeys: typing "done" must not delete, open a form
+		// or quit. Only ctrl+c keeps its meaning.
+		if !a.boardCapturingText() || msg.String() == "ctrl+c" {
+			cmds = append(cmds, a.handleKey(msg)...)
+		}
 
 	case tea.MouseMsg:
 		cmds = append(cmds, a.handleMouse(msg)...)
@@ -204,8 +241,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		counts := a.buildCounts()
 		a.sidebar = NewSidebar(a.projects, counts, a.sidebarWidth(), a.height-3)
 		for _, p := range a.projects {
-			if p.RepoPath != "" {
-				a.gitClients[p.ID] = git.New(p.RepoPath)
+			if repo := git.ForProject(p); repo.Dir != "" {
+				a.gitClients[p.ID] = git.New(repo.Dir)
 			}
 		}
 		if len(a.projects) > 0 {
@@ -259,7 +296,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if t.ID == msg.taskID {
 				found = true
 				a.detail = a.detail.SetTask(t)
-				cmds = append(cmds, a.refreshGit(t))
+				cmds = append(cmds, a.refreshGit(t), a.loadRecords(t.ID))
 				break
 			}
 		}
@@ -271,6 +308,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Fix 7: wrap MoveTask in a cmd instead of calling synchronously
 		pid := a.sidebar.SelectedProjectID()
 		cmds = append(cmds, a.doMoveTask(msg.taskID, msg.status, pid))
+
+	case taskRecordsMsg:
+		// Only the ticket on show, or none: the user may have moved on.
+		if cur := a.detail.TaskID(); cur == "" || cur == msg.task.ID {
+			a.detail = a.detail.SetTask(msg.task).SetUnfiled(msg.unfiled)
+		}
+
+	case noteAddedMsg:
+		a.setStatus("noted on " + msg.taskID)
+		cmds = append(cmds, a.loadRecords(msg.taskID))
 
 	case gitRefreshedMsg:
 		a.detail = a.detail.SetCommits(msg.commits)
@@ -334,7 +381,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, t := range a.currentTasks {
 			if t.ID == msg.taskID {
 				a.detail = a.detail.SetTask(t)
-				cmds = append(cmds, a.refreshGit(t))
+				cmds = append(cmds, a.refreshGit(t), a.loadRecords(t.ID))
 				break
 			}
 		}
@@ -392,6 +439,12 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 		a.syncFocus()
 	case "n":
 		a.openNewForm()
+	case "a":
+		if id := a.board.SelectedTaskID(); id != "" {
+			nf := forms.NewNoteForm(id, a.width, a.height)
+			a.noteForm = &nf
+			cmds = append(cmds, nf.Init())
+		}
 	case "e":
 		if id := a.board.SelectedTaskID(); id != "" {
 			found := false
@@ -431,10 +484,14 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 			}
 		}
 	case "d":
-		// Fix 8: wrap DeleteTask in cmd
+		// Deleting is permanent and d works from any panel, so the cursor may
+		// be on a ticket the user cannot see. Name it and wait for y.
 		if id := a.board.SelectedTaskID(); id != "" {
-			pid := a.sidebar.SelectedProjectID()
-			cmds = append(cmds, a.doDeleteTask(id, pid))
+			a.pendingDelete = &pendingDelete{
+				taskID:    id,
+				title:     a.cachedTitle(id),
+				projectID: a.sidebar.SelectedProjectID(),
+			}
 		}
 	case "r":
 		pid := a.sidebar.SelectedProjectID()
@@ -482,6 +539,41 @@ func (a *App) handleKey(msg tea.KeyMsg) []tea.Cmd {
 	return cmds
 }
 
+// answerDeleteConfirm resolves a pending delete: y deletes, any other key
+// cancels. Either way the key is used up and reaches nothing else.
+func (a App) answerDeleteConfirm(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	p := a.pendingDelete
+	a.pendingDelete = nil
+	if k := key.String(); k == "y" || k == "Y" {
+		return a, a.doDeleteTask(p.taskID, p.projectID)
+	}
+	a.setStatus("delete cancelled")
+	return a, nil
+}
+
+// deletePrompt is the status-bar question for a pending delete, with the
+// title shortened so the line stays on one row.
+func (a App) deletePrompt() string {
+	p := a.pendingDelete
+	head := "⚠ Delete " + p.taskID
+	tail := "?  [y] delete  ·  any other key cancels"
+	room := a.width - lipgloss.Width(head) - lipgloss.Width(tail) - 6
+	if room < 4 {
+		return head + tail
+	}
+	return head + ` "` + styles.TruncateRune(p.title, room) + `"` + tail
+}
+
+// cachedTitle returns the title of a ticket on the current board.
+func (a *App) cachedTitle(id string) string {
+	for _, t := range a.currentTasks {
+		if t.ID == id {
+			return t.Title
+		}
+	}
+	return ""
+}
+
 func (a *App) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 	if msg.Action == tea.MouseActionPress {
 		if msg.X < a.sidebarWidth() {
@@ -494,6 +586,12 @@ func (a *App) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 		a.syncFocus()
 	}
 	return nil
+}
+
+// boardCapturingText reports whether key presses are currently text for one
+// of the board's input bars.
+func (a *App) boardCapturingText() bool {
+	return a.focus == focusBoard && a.board.CapturingText()
 }
 
 func (a *App) syncFocus() {
@@ -547,13 +645,7 @@ func (a App) handleFormSaved(msg forms.SavedMsg) (tea.Model, tea.Cmd) {
 	if msg.IsNew {
 		return a, a.doCreateTask(msg, pid)
 	}
-	// find task in cache for edit
-	for _, t := range a.currentTasks {
-		if t.ID == msg.TaskID {
-			return a, a.doUpdateTask(msg, t)
-		}
-	}
-	return a, nil
+	return a, a.doUpdateTask(msg, pid)
 }
 
 func (a App) handleSprintFormSaved(msg forms.SprintSavedMsg) (tea.Model, tea.Cmd) {
@@ -601,56 +693,71 @@ func (a App) doCreateTask(msg forms.SavedMsg, projectID string) tea.Cmd {
 	}
 }
 
-func (a App) doUpdateTask(msg forms.SavedMsg, t *domain.Task) tea.Cmd {
-	updated := *t
-	updated.Title = msg.Title
-	updated.Description = msg.Description
-	updated.Priority = msg.Priority
-	updated.Status = msg.Status
-	updated.Labels = msg.Labels
-	updated.Points = msg.Points
-	updated.SprintID = msg.SprintID
-	if msg.AssigneeID != "" {
-		s := msg.AssigneeID
-		updated.AssigneeID = &s
-	} else {
-		updated.AssigneeID = nil
+// doUpdateTask saves an edit. Only the fields the user changed in the form are
+// sent, so everything else on the ticket keeps whatever the store holds now,
+// including changes agents made while the form was open.
+func (a App) doUpdateTask(msg forms.SavedMsg, projectID string) tea.Cmd {
+	taskID := msg.TaskID
+	c := msg.Changed
+
+	var p domain.TaskPatch
+	if c.Title {
+		p.Title = domain.To(msg.Title)
 	}
-	taskID := t.ID
-	projectID := t.ProjectID
-	oldBlockers := append([]string(nil), t.Blockers...)
-	oldBlocking := append([]string(nil), t.Blocking...)
-	newBlockedBy := msg.BlockedBy
-	newBlocks := msg.Blocks
+	if c.Description {
+		p.Description = domain.To(msg.Description)
+	}
+	if c.Priority {
+		p.Priority = domain.To(msg.Priority)
+	}
+	if c.Status {
+		p.Status = domain.To(msg.Status)
+	}
+	if c.Labels {
+		p.Labels = domain.To(msg.Labels)
+	}
+	if c.Points {
+		p.Points = domain.To(msg.Points)
+	}
+	if c.SprintID {
+		p.SprintID = domain.To(msg.SprintID)
+	}
+	if c.AssigneeID {
+		assignee := msg.AssigneeID // "" means nobody
+		p.AssigneeID = domain.To(&assignee)
+	}
 
 	return func() tea.Msg {
-		if _, err := a.svc.UpdateTask(&updated); err != nil {
+		if _, err := a.svc.PatchTask(taskID, p); err != nil {
 			return statusNotifMsg{fmt.Sprintf("error: %v", err)}
 		}
 
-		// Reconcile blocked-by (tasks that block this task)
-		add, remove := diffBlockers(oldBlockers, newBlockedBy)
-		for _, id := range remove {
-			if err := a.svc.RemoveDep(id, taskID); err != nil {
-				return statusNotifMsg{fmt.Sprintf("error removing blocker %s: %v", id, err)}
+		// Dependencies are reconciled against what the form showed when it
+		// opened, so only the links the user added or removed are touched.
+		if c.BlockedBy {
+			add, remove := diffBlockers(msg.BlockedByWas, msg.BlockedBy)
+			for _, id := range remove {
+				if err := a.svc.RemoveDep(id, taskID); err != nil {
+					return statusNotifMsg{fmt.Sprintf("error removing blocker %s: %v", id, err)}
+				}
+			}
+			for _, id := range add {
+				if err := a.svc.AddDep(id, taskID); err != nil {
+					return statusNotifMsg{fmt.Sprintf("error adding blocker %s: %v", id, err)}
+				}
 			}
 		}
-		for _, id := range add {
-			if err := a.svc.AddDep(id, taskID); err != nil {
-				return statusNotifMsg{fmt.Sprintf("error adding blocker %s: %v", id, err)}
+		if c.Blocks {
+			add, remove := diffBlockers(msg.BlocksWas, msg.Blocks)
+			for _, id := range remove {
+				if err := a.svc.RemoveDep(taskID, id); err != nil {
+					return statusNotifMsg{fmt.Sprintf("error removing block %s: %v", id, err)}
+				}
 			}
-		}
-
-		// Reconcile blocks (tasks that this task blocks)
-		add, remove = diffBlockers(oldBlocking, newBlocks)
-		for _, id := range remove {
-			if err := a.svc.RemoveDep(taskID, id); err != nil {
-				return statusNotifMsg{fmt.Sprintf("error removing block %s: %v", id, err)}
-			}
-		}
-		for _, id := range add {
-			if err := a.svc.AddDep(taskID, id); err != nil {
-				return statusNotifMsg{fmt.Sprintf("error adding block %s: %v", id, err)}
+			for _, id := range add {
+				if err := a.svc.AddDep(taskID, id); err != nil {
+					return statusNotifMsg{fmt.Sprintf("error adding block %s: %v", id, err)}
+				}
 			}
 		}
 
@@ -718,6 +825,34 @@ func diffBlockers(oldIDs, newIDs []string) (toAdd, toRemove []string) {
 	return
 }
 
+// loadRecords reads a ticket in full — notes, links and files included — for
+// the detail panel.
+func (a App) loadRecords(id string) tea.Cmd {
+	svc := a.svc
+	return func() tea.Msg {
+		t, err := svc.GetTask(id)
+		if err != nil {
+			return nil
+		}
+		unfiled, _ := svc.ListArtifacts(domain.ArtifactQuery{ProjectID: t.ProjectID, Unfiled: true})
+		return taskRecordsMsg{task: t, unfiled: len(unfiled)}
+	}
+}
+
+// doAddNote adds a note signed by the TUI's user.
+func (a App) doAddNote(taskID, body string) tea.Cmd {
+	svc, author := a.svc, a.defaultAssignee
+	return func() tea.Msg {
+		if _, err := svc.GetUser(author); err != nil {
+			author = "" // not on the board: keep the note unsigned
+		}
+		if _, err := svc.AddNote(taskID, author, body); err != nil {
+			return statusNotifMsg{"note not saved: " + err.Error()}
+		}
+		return noteAddedMsg{taskID: taskID}
+	}
+}
+
 func (a App) refreshGit(t *domain.Task) tea.Cmd {
 	client, ok := a.gitClients[t.ProjectID]
 	branch := t.Branch
@@ -750,20 +885,20 @@ func (a App) pollCurrentTaskGit() tea.Cmd {
 	if task == nil || task.PRNumber == nil {
 		return nil
 	}
-	var repoPath string
+	var repo git.Repo
 	for _, p := range a.projects {
 		if p.ID == task.ProjectID {
-			repoPath = p.RepoPath
+			repo = git.ForProject(p)
 			break
 		}
 	}
-	if repoPath == "" {
+	if repo.Dir == "" && repo.Remote == "" {
 		return nil
 	}
 	prNum := *task.PRNumber
 	taskID := task.ID
 	return func() tea.Msg {
-		status, err := git.PRView(repoPath, prNum)
+		status, err := repo.PRView(prNum)
 		if err != nil {
 			return statusNotifMsg{fmt.Sprintf("PR check failed: %v", err)}
 		}
@@ -778,20 +913,20 @@ func (a App) pollPRs() []tea.Cmd {
 		if t.Status != domain.StatusReview || t.PRNumber == nil {
 			continue
 		}
-		var repoPath string
+		var repo git.Repo
 		for _, p := range a.projects {
 			if p.ID == t.ProjectID {
-				repoPath = p.RepoPath
+				repo = git.ForProject(p)
 				break
 			}
 		}
-		if repoPath == "" {
+		if repo.Dir == "" && repo.Remote == "" {
 			continue
 		}
 		prNum := *t.PRNumber
 		taskID := t.ID
 		cmds = append(cmds, func() tea.Msg {
-			status, err := git.PRView(repoPath, prNum)
+			status, err := repo.PRView(prNum)
 			if err != nil {
 				return statusNotifMsg{fmt.Sprintf("PR check failed: %v", err)}
 			}
@@ -840,10 +975,17 @@ func (a App) View() string {
 	if a.statusMsg != "" && time.Now().Before(a.statusExpiry) {
 		statusText = a.statusMsg
 	}
+	if a.pendingDelete != nil {
+		statusText = a.deletePrompt()
+	}
 	statusBar := styles.StatusBar.Width(a.width).Render(statusText)
 
 	if a.blockerPicker != nil {
 		return a.blockerPicker.View()
+	}
+
+	if a.noteForm != nil {
+		return a.noteForm.View()
 	}
 
 	if a.sprintForm != nil {

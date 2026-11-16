@@ -14,6 +14,9 @@ RUN apk add --no-cache ca-certificates tzdata curl && \
 COPY --from=main-binary /usr/local/bin/KeroAgile /usr/local/bin/KeroAgile
 ENV KEROAGILE_DATA_DIR=/data
 VOLUME ["/data"]
+COPY docker/ttyd-entrypoint.sh /usr/local/bin/ttyd-entrypoint
+RUN chmod +x /usr/local/bin/ttyd-entrypoint
 EXPOSE 7433
-# ttyd serves the TUI at :7433; --writable allows keyboard input
-ENTRYPOINT ["ttyd", "--port", "7433", "--writable", "KeroAgile"]
+# ttyd serves the TUI at :7433. The entrypoint reads TTYD_CREDENTIAL,
+# TTYD_MAX_CLIENTS and TTYD_CHECK_ORIGIN; see docker/ttyd-entrypoint.sh.
+ENTRYPOINT ["/usr/local/bin/ttyd-entrypoint"]

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -69,7 +70,7 @@ func TestPRForBranch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeGH(t, tc.stdout, tc.stderr, tc.exitCode)
 
-			got, err := git.PRForBranch("owner/repo", "feature/test")
+			got, err := git.Repo{Remote: "owner/repo"}.PRForBranch("feature/test")
 			if tc.wantErr {
 				require.Error(t, err)
 				return
@@ -78,4 +79,66 @@ func TestPRForBranch(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// recordingGH installs a gh that answers with stdout and writes its working
+// directory and arguments, one per line, to the returned file.
+func recordingGH(t *testing.T, stdout string) string {
+	t.Helper()
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	script := "#!/bin/sh\n" +
+		fmt.Sprintf("pwd > '%s'\nfor a in \"$@\"; do printf '%%s\\n' \"$a\" >> '%s'; done\n", log, log) +
+		fmt.Sprintf("printf '%%s' '%s'\n", stdout)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0755))
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	return log
+}
+
+func readLines(t *testing.T, path string) []string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+}
+
+func TestGH_UsesRemoteWhenKnown(t *testing.T) {
+	log := recordingGH(t, `{"state":"OPEN","number":1}`)
+	_, err := git.Repo{Dir: t.TempDir(), Remote: "github.com/o/r"}.PRForBranch("feat/x")
+	require.NoError(t, err)
+	args := readLines(t, log)[1:]
+	assert.Contains(t, strings.Join(args, " "), "-R github.com/o/r")
+}
+
+func TestGH_RunsInDirWithoutRemote(t *testing.T) {
+	log := recordingGH(t, `{"state":"OPEN","number":1}`)
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	_, err = git.Repo{Dir: dir}.PRForBranch("feat/x")
+	require.NoError(t, err)
+	lines := readLines(t, log)
+	assert.Equal(t, dir, lines[0])
+	assert.NotContains(t, lines[1:], "-R")
+}
+
+func TestPRForBranch_BranchAfterEndOfOptions(t *testing.T) {
+	log := recordingGH(t, `{"state":"OPEN","number":1}`)
+	_, err := git.Repo{Remote: "o/r"}.PRForBranch("feat/x")
+	require.NoError(t, err)
+	args := readLines(t, log)[1:]
+	require.GreaterOrEqual(t, len(args), 2)
+	assert.Equal(t, []string{"--", "feat/x"}, args[len(args)-2:])
+}
+
+func TestPRForBranch_RefusesOptionLikeBranch(t *testing.T) {
+	log := recordingGH(t, `{}`)
+	_, err := git.Repo{Remote: "o/r"}.PRForBranch("--repo=evil/x")
+	require.Error(t, err)
+	_, statErr := os.Stat(log)
+	assert.True(t, os.IsNotExist(statErr), "gh was not run")
+}
+
+func TestPRView_NoRepoIsAnError(t *testing.T) {
+	_, err := git.Repo{}.PRView(1)
+	require.Error(t, err)
 }

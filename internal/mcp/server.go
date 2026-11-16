@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
-	"os/exec"
-	"strings"
 
+	"github.com/tbdtechpro/KeroAgile/internal/artifacts"
 	"github.com/tbdtechpro/KeroAgile/internal/domain"
+	"github.com/tbdtechpro/KeroAgile/internal/git"
 )
 
 type Request struct {
@@ -36,7 +36,15 @@ const (
 	codeAppError       = -32000
 )
 
-func Serve(svc *domain.Service) error {
+// Env is what the tools work on: the board, and the keeper of files kept
+// against tickets (nil when it could not be set up; FilesErr says why).
+type Env struct {
+	Svc      *domain.Service
+	Files    *artifacts.Keeper
+	FilesErr error
+}
+
+func Serve(env Env) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	enc := json.NewEncoder(os.Stdout)
@@ -46,15 +54,21 @@ func Serve(svc *domain.Service) error {
 			enc.Encode(Response{JSONRPC: "2.0", Error: &RPCError{Code: codeParseError, Message: err.Error()}}) //nolint:errcheck
 			continue
 		}
-		if resp := Dispatch(svc, req); resp != nil {
+		if resp := DispatchEnv(env, req); resp != nil {
 			enc.Encode(resp) //nolint:errcheck
 		}
 	}
 	return scanner.Err()
 }
 
-// Returns nil for JSON-RPC notifications that require no response.
+// Dispatch answers req with no file keeper.
 func Dispatch(svc *domain.Service, req Request) *Response {
+	return DispatchEnv(Env{Svc: svc}, req)
+}
+
+// DispatchEnv answers req. It returns nil for JSON-RPC notifications that
+// require no response.
+func DispatchEnv(env Env, req Request) *Response {
 	base := &Response{JSONRPC: "2.0", ID: req.ID}
 	switch req.Method {
 	case "initialize":
@@ -62,6 +76,7 @@ func Dispatch(svc *domain.Service, req Request) *Response {
 			"protocolVersion": "2024-11-05",
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "keroagile", "version": "0.2.0"},
+			"instructions":    serverInstructions,
 		}
 	case "notifications/initialized":
 		return nil
@@ -76,7 +91,7 @@ func Dispatch(svc *domain.Service, req Request) *Response {
 			base.Error = &RPCError{Code: codeInvalidReq, Message: err.Error()}
 			return base
 		}
-		result, err := CallTool(svc, p.Name, p.Arguments)
+		result, err := CallToolEnv(env, p.Name, p.Arguments)
 		if err != nil {
 			base.Error = &RPCError{Code: codeAppError, Message: err.Error()}
 			return base
@@ -90,20 +105,21 @@ func Dispatch(svc *domain.Service, req Request) *Response {
 	return base
 }
 
+// DetectProjectID returns the project the server's working directory belongs
+// to: the project whose directory holds it (the deepest one), or else the one
+// whose remote is this clone's origin. It returns "" when there is none or
+// when two projects match equally, so the caller asks for a project_id
+// instead of guessing.
 func DetectProjectID(svc *domain.Service) string {
-	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return ""
 	}
-	remote := strings.TrimSpace(string(out))
-	projects, err := svc.ListProjects()
+	remote, _ := git.RemoteURL(cwd)
+	home, _ := os.UserHomeDir()
+	p, err := svc.ProjectForDir(cwd, remote, home)
 	if err != nil {
 		return ""
 	}
-	for _, p := range projects {
-		if p.RepoPath != "" && strings.Contains(remote, p.RepoPath) {
-			return p.ID
-		}
-	}
-	return ""
+	return p.ID
 }

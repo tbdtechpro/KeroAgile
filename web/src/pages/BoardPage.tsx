@@ -11,6 +11,7 @@ import ToastContainer from '../components/Toast'
 import { SyncStatus } from '../components/SyncStatus'
 import { FrozenProjectBanner } from '../components/FrozenProjectBanner'
 import { AddSyncedProjectModal } from '../components/AddSyncedProjectModal'
+import UnfiledFiles from '../components/UnfiledFiles'
 
 type ModalState =
   | { open: false }
@@ -130,9 +131,11 @@ export default function BoardPage() {
           + Add synced project
         </button>
         <SyncStatus />
+        <div className="ml-auto" />
+        <UnfiledFiles projectId={currentProjectId} onToast={pushToast} />
         <button
           onClick={() => setModal({ open: true, status: 'backlog' })}
-          className="ml-auto mb-1 px-2 py-1 text-xs rounded transition-opacity opacity-60 hover:opacity-100"
+          className="mb-1 px-2 py-1 text-xs rounded transition-opacity opacity-60 hover:opacity-100"
           style={{ color: 'var(--ka-accent-lt)', background: 'var(--ka-surface)' }}
         >
           + New task

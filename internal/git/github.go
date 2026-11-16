@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+
+	"github.com/tbdtechpro/KeroAgile/internal/domain"
 )
 
 type PRStatus struct {
@@ -23,11 +25,9 @@ type OpenPR struct {
 }
 
 // PRView fetches the state of a single PR by number.
-func PRView(repoPath string, prNumber int) (*PRStatus, error) {
-	out, err := execGH("pr", "view", fmt.Sprintf("%d", prNumber),
-		"--json", "number,state,title,url,comments",
-		"-R", repoPath,
-	)
+func (r Repo) PRView(prNumber int) (*PRStatus, error) {
+	out, err := r.gh("pr", "view", fmt.Sprintf("%d", prNumber),
+		"--json", "number,state,title,url,comments")
 	if err != nil {
 		return nil, err
 	}
@@ -52,8 +52,14 @@ func PRView(repoPath string, prNumber int) (*PRStatus, error) {
 
 // PRForBranch returns the PR for the given branch, or nil if no PR exists.
 // Returns (nil, nil) when gh reports no PR found.
-func PRForBranch(repoPath, branch string) (*PRStatus, error) {
-	out, err := execGH("pr", "view", branch, "--json", "number,state", "-R", repoPath)
+func (r Repo) PRForBranch(branch string) (*PRStatus, error) {
+	if branch == "" {
+		return nil, fmt.Errorf("gh pr view: no branch")
+	}
+	if err := domain.ValidBranchName(branch); err != nil {
+		return nil, err
+	}
+	out, err := r.gh("pr", "view", "--json", "number,state", "--", branch)
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			if bytes.Contains(exitErr.Stderr, []byte("no pull requests found")) ||
@@ -74,12 +80,10 @@ func PRForBranch(repoPath, branch string) (*PRStatus, error) {
 }
 
 // ListOpenPRs returns open PRs for the repo, used for auto-detect.
-func ListOpenPRs(repoPath string) ([]OpenPR, error) {
-	out, err := execGH("pr", "list",
+func (r Repo) ListOpenPRs() ([]OpenPR, error) {
+	out, err := r.gh("pr", "list",
 		"--json", "number,headRefName,title,url",
-		"--state", "open",
-		"-R", repoPath,
-	)
+		"--state", "open")
 	if err != nil {
 		return nil, err
 	}

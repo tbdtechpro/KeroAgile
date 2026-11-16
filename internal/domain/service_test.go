@@ -3,6 +3,7 @@ package domain_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -11,6 +12,10 @@ import (
 
 // mockStore is a minimal in-memory Store for service tests.
 type mockStore struct {
+	// Store is nil: a method the mock does not define panics if a test
+	// reaches it, so new record methods need no stubs here.
+	domain.Store
+
 	projects map[string]*domain.Project
 	tasks    map[string]*domain.Task
 	users    map[string]*domain.User
@@ -18,6 +23,14 @@ type mockStore struct {
 	seqs     map[string]int
 	deps     map[string][]string // blocked_id -> []blocker_id
 	blocking map[string][]string // blocker_id -> []blocked_id
+
+	notes   []*domain.Note
+	links   []*domain.Link
+	linkSeq int64
+	noteSeq int64
+
+	lastQuery domain.TaskQuery   // the query FindTasks was last called with
+	patches   []domain.TaskPatch // every patch PatchTask was called with
 }
 
 func newMock() *mockStore {
@@ -52,6 +65,25 @@ func (m *mockStore) GetProject(id string) (*domain.Project, error) {
 }
 func (m *mockStore) UpdateProject(p *domain.Project) error {
 	m.projects[p.ID] = p
+	return nil
+}
+func (m *mockStore) PatchProject(id string, p domain.ProjectPatch) error {
+	pr, ok := m.projects[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	if p.RepoDir.Set {
+		pr.RepoDir = p.RepoDir.Value
+	}
+	if p.RepoRemote.Set {
+		pr.RepoRemote = p.RepoRemote.Value
+	}
+	if p.ArtifactPolicy.Set {
+		pr.ArtifactPolicy = p.ArtifactPolicy.Value
+	}
+	if p.SprintMode.Set {
+		pr.SprintMode = p.SprintMode.Value
+	}
 	return nil
 }
 func (m *mockStore) CreateTask(t *domain.Task) error {
@@ -90,6 +122,53 @@ func (m *mockStore) UpdateTask(t *domain.Task) error {
 	m.tasks[t.ID] = t
 	return nil
 }
+func (m *mockStore) PatchTask(id string, p domain.TaskPatch, now time.Time) error {
+	m.patches = append(m.patches, p)
+	t, ok := m.tasks[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	if p.IfUpdatedAt != nil && !p.IfUpdatedAt.Equal(t.UpdatedAt) {
+		return domain.ErrConflict
+	}
+	changed := *t
+	if p.Title.Set {
+		changed.Title = p.Title.Value
+	}
+	if p.Description.Set {
+		changed.Description = p.Description.Value
+	}
+	if p.Status.Set {
+		changed.Status = p.Status.Value
+	}
+	if p.Priority.Set {
+		changed.Priority = p.Priority.Value
+	}
+	if p.AssigneeID.Set {
+		changed.AssigneeID = p.AssigneeID.Value
+	}
+	if p.Points.Set {
+		changed.Points = p.Points.Value
+	}
+	if p.Labels.Set {
+		changed.Labels = p.Labels.Value
+	}
+	if p.SprintID.Set {
+		changed.SprintID = p.SprintID.Value
+	}
+	if p.Branch.Set {
+		changed.Branch = p.Branch.Value
+	}
+	if p.PRNumber.Set {
+		changed.PRNumber = p.PRNumber.Value
+	}
+	if p.PRMerged.Set {
+		changed.PRMerged = p.PRMerged.Value
+	}
+	changed.UpdatedAt = now
+	m.tasks[id] = &changed
+	return nil
+}
 func (m *mockStore) DeleteTask(id string) error {
 	delete(m.tasks, id)
 	return nil
@@ -123,6 +202,17 @@ func (m *mockStore) SearchTasksWithHint(q string, limit int, hintProjectID strin
 	}
 	return out, nil
 }
+func (m *mockStore) FindTasks(q domain.TaskQuery) ([]*domain.Task, int, error) {
+	m.lastQuery = q
+	var out []*domain.Task
+	for _, t := range m.tasks {
+		if q.ProjectID == "" || t.ProjectID == q.ProjectID {
+			out = append(out, t)
+		}
+	}
+	return out, len(out), nil
+}
+func (m *mockStore) TaskCounts() (map[string]map[domain.Status]int, error) { return nil, nil }
 func (m *mockStore) NextTaskSeq(projectID string) (int, error) {
 	m.seqs[projectID]++
 	return m.seqs[projectID], nil
@@ -185,6 +275,8 @@ func (m *mockStore) SetUserPassword(id, hash string) error { return nil }
 func TestServiceCreateTask(t *testing.T) {
 	svc := domain.NewService(newMock())
 	require.NoError(t, svc.CreateProject("KA", "myapp", ""))
+	_, err := svc.CreateUser("claude", "Claude", true)
+	require.NoError(t, err)
 
 	task, err := svc.CreateTask("Fix login", "", "KA", domain.TaskCreateOpts{
 		Priority:   domain.PriorityHigh,
@@ -223,12 +315,13 @@ func TestAssignTaskToSprint(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, task.SprintID)
 
-	// Assign to sprint 1
-	sprintID := int64(1)
-	updated, err := svc.AssignTaskToSprint(task.ID, &sprintID)
+	// Assign to a sprint of the same project
+	sprint, err := svc.CreateSprint("Sprint 1", "KA", nil, nil)
+	require.NoError(t, err)
+	updated, err := svc.AssignTaskToSprint(task.ID, &sprint.ID)
 	require.NoError(t, err)
 	require.NotNil(t, updated.SprintID)
-	assert.Equal(t, int64(1), *updated.SprintID)
+	assert.Equal(t, sprint.ID, *updated.SprintID)
 
 	// Clear assignment
 	cleared, err := svc.AssignTaskToSprint(task.ID, nil)
@@ -287,4 +380,56 @@ func TestCrossProjectDep(t *testing.T) {
 	t2, err := svc.GetTask(ka.ID)
 	require.NoError(t, err)
 	assert.Contains(t, t2.Blockers, kcp.ID)
+}
+
+func (m *mockStore) AddNote(n *domain.Note) error {
+	m.noteSeq++
+	n.ID = m.noteSeq
+	m.notes = append(m.notes, n)
+	return nil
+}
+
+func (m *mockStore) ListNotes(taskID string) ([]*domain.Note, error) {
+	var out []*domain.Note
+	for _, n := range m.notes {
+		if n.TaskID == taskID {
+			out = append(out, n)
+		}
+	}
+	return out, nil
+}
+
+func (m *mockStore) ListArtifacts(q domain.ArtifactQuery) ([]*domain.Artifact, error) { return nil, nil }
+
+func (m *mockStore) UpsertLink(l *domain.Link) (bool, error) {
+	for _, have := range m.links {
+		if have.TaskID == l.TaskID && have.Kind == l.Kind && have.Repo == l.Repo && have.Ref == l.Ref {
+			if l.Title != "" {
+				have.Title = l.Title
+			}
+			if l.URL != "" {
+				have.URL = l.URL
+			}
+			if l.State != "" {
+				have.State = l.State
+			}
+			*l = *have
+			return false, nil
+		}
+	}
+	m.linkSeq++
+	l.ID = m.linkSeq
+	cp := *l
+	m.links = append(m.links, &cp)
+	return true, nil
+}
+
+func (m *mockStore) ListLinks(taskID string) ([]*domain.Link, error) {
+	var out []*domain.Link
+	for _, l := range m.links {
+		if l.TaskID == taskID {
+			out = append(out, l)
+		}
+	}
+	return out, nil
 }

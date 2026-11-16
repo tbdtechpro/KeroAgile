@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -119,7 +120,26 @@ func TestToolsListCount(t *testing.T) {
 	require.Nil(t, resp.Error)
 	tools, ok := resp.Result.(map[string]any)["tools"]
 	require.True(t, ok)
-	require.Len(t, tools, 15)
+	b, err := json.Marshal(tools)
+	require.NoError(t, err)
+	var defs []struct {
+		Name string `json:"name"`
+	}
+	require.NoError(t, json.Unmarshal(b, &defs))
+	require.GreaterOrEqual(t, len(defs), 17)
+
+	// Every listed tool has its own name and is one CallTool knows: a tool
+	// that is listed but not dispatched answers "unknown tool".
+	seen := map[string]bool{}
+	for _, d := range defs {
+		require.False(t, seen[d.Name], "tool %s listed twice", d.Name)
+		seen[d.Name] = true
+		_, err := mcp.CallTool(svc, d.Name, map[string]any{})
+		if err != nil {
+			require.NotContains(t, err.Error(), "unknown tool", d.Name)
+		}
+	}
+	require.True(t, seen["add_note"])
 }
 
 func TestRPCDispatch(t *testing.T) {
@@ -145,4 +165,32 @@ func TestRPCDispatch(t *testing.T) {
 	resp = mcp.Dispatch(svc, req)
 	require.NotNil(t, resp.Error)
 	require.Equal(t, -32601, resp.Error.Code)
+}
+
+func TestDispatchInitializeIncludesInstructions(t *testing.T) {
+	// No service needed — initialize doesn't touch the store.
+	req := mcp.Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`1`),
+		Method:  "initialize",
+	}
+	resp := mcp.Dispatch(nil, req)
+	if resp == nil {
+		t.Fatal("expected non-nil response from initialize")
+	}
+	result, ok := resp.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map result; got %T", resp.Result)
+	}
+	instructions, ok := result["instructions"].(string)
+	if !ok {
+		t.Fatal("expected string 'instructions' key in initialize result")
+	}
+	// Must mention the forbidden concepts so a future regression that
+	// silently empties this string fails loudly.
+	for _, term := range []string{"umbrella", "parent", "epic", "flat"} {
+		if !strings.Contains(strings.ToLower(instructions), term) {
+			t.Errorf("instructions should mention %q; got: %s", term, instructions)
+		}
+	}
 }

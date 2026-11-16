@@ -38,7 +38,8 @@ The MCP integration is the part that makes it genuinely different. When you add 
 - **Sprints** — create sprint phases, filter the board to a sprint, assign tasks, track per-sprint progress
 - **Blockers** — mark tasks as blocking/blocked-by across projects; blocked tasks shown with ⚠; cross-project blockers display with project prefix and ↗ indicator in both TUI and web UI
 - **PR auto-close** — link a PR number to a task; when it merges, the task moves to `done` automatically
-- **Claude Code MCP** — 15 MCP tools covering every board operation; auto-detects project from git remote
+- **Notes, links and kept files** — dated notes on every ticket; links to many commits and pull requests, recorded automatically from commit messages; test scripts, logs, screenshots, audio and video kept with the ticket, optionally offloaded to an S3-compatible store or a folder ([guide](docs/ticket-records.md))
+- **Claude Code MCP** — MCP tools covering every board operation; auto-detects the project from the working directory or git remote
 - **Smart assignee** — infers the right assignee from title keywords (no need to specify every time)
 - **REST API** — JWT-authenticated HTTP API on port 7432; powers the web UI and enables scripting
 - **CLI + JSON** — every operation works as a subcommand; pipe to `jq` when stdout isn't a TTY
@@ -420,13 +421,24 @@ services:
       - keroagile-data:/data
 ```
 
-**TUI in the browser** — `Dockerfile.ttyd` wraps the TUI with [ttyd](https://github.com/tsl0922/ttyd), exposing a fully interactive terminal at `http://homelab:7433`. No JavaScript, no frontend:
+**TUI in the browser** — `Dockerfile.ttyd` wraps the TUI with [ttyd](https://github.com/tsl0922/ttyd), serving a fully interactive terminal on port 7433. No JavaScript, no frontend:
 
 ```bash
 # Start the browser-accessible TUI (alongside the main service)
 docker compose --profile browser up keroagile-browser
 # then open http://localhost:7433
 ```
+
+Anyone who can open that port can read and edit the whole board, and the web UI's login does not cover it. By default it is published on the local machine only. To change that, set these in the environment or in a `.env` file next to `docker-compose.yml`:
+
+| Setting | Effect |
+|---|---|
+| `KEROAGILE_TTYD_BIND=0.0.0.0` | Publish on every network interface instead of `127.0.0.1` |
+| `KEROAGILE_TTYD_CREDENTIAL=user:password` | Require a login in the browser |
+| `KEROAGILE_TTYD_PORT=7433` | Host port |
+| `KEROAGILE_TTYD_MAX_CLIENTS=2` | Limit simultaneous sessions |
+
+If you publish it beyond the local machine, set a credential unless your network already restricts who can reach it. To reach a local-only terminal from another machine, use an SSH tunnel: `ssh -L 7433:localhost:7433 yourhost`.
 
 Both services share the same `keroagile-data` volume.
 

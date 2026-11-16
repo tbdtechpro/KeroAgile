@@ -28,12 +28,57 @@ export interface Task {
   blocking_details?: TaskSummary[] | null
   created_at: string
   updated_at: string
+  notes?: Note[]
+  links?: Link[]
+  artifacts?: Artifact[]
+}
+
+export interface Link {
+  id: number
+  task_id: string
+  kind: 'commit' | 'branch' | 'pr' | 'tag'
+  repo?: string
+  ref: string
+  title?: string
+  url?: string
+  state?: string
+  source: string
+  created_at: string
+}
+
+export type ArtifactKind = 'script' | 'log' | 'image' | 'audio' | 'video' | 'document' | 'other'
+
+export interface Artifact {
+  id: number
+  project_id: string
+  task_id: string | null
+  kind: ArtifactKind
+  name: string
+  media_type?: string
+  sha256: string
+  size: number
+  note?: string
+  origin: string
+  created_by?: string
+  created_at: string
+  where: 'here' | 'remote' | 'both' | 'unavailable'
+}
+
+export interface Note {
+  id: number
+  task_id: string
+  author_id?: string
+  body: string
+  created_at: string
 }
 
 export interface Project {
   id: string
   name: string
   repo_path: string
+  repo_dir?: string
+  repo_remote?: string
+  artifact_policy?: '' | 'remote' | 'local' | 'off'
   sprint_mode: boolean
   sync_origin?: string
   sync_status?: string

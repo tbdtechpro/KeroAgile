@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Task } from '../api/types'
 import { useDeleteTask, useRemoveBlocker } from '../api/queries'
+import TicketRecords from './TicketRecords'
 
 const PRIORITY_COLORS: Record<string, string> = {
   low: 'var(--ka-muted)',
@@ -144,6 +145,8 @@ export default function TaskDetail({
             </p>
           </Field>
         )}
+
+        <TicketRecords taskId={task.id} onToast={onToast} />
 
         {task.assignee_id && (
           <Field label="Assignee">

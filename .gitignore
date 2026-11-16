@@ -1,5 +1,5 @@
-KeroAgile
-keroagile
+/KeroAgile
+/keroagile
 .superpowers/
 .worktrees/
 *.db
@@ -9,3 +9,4 @@ web/node_modules/
 web/dist/
 internal/web/dist/
 scripts/
+/casper-garage/

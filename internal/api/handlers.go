@@ -3,6 +3,8 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -159,64 +161,132 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if s.maybeSyncProxy(w, r, existing.ProjectID) {
 		return
 	}
-	var req struct {
-		Title       *string  `json:"title"`
-		Description *string  `json:"description"`
-		Status      *string  `json:"status"`
-		Priority    *string  `json:"priority"`
-		AssigneeID  *string  `json:"assignee_id"`
-		Points      *int     `json:"points"`
-		Labels      []string `json:"labels"`
-		SprintID    *int64   `json:"sprint_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var body map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	// Status change goes through MoveTask for proper transition logic.
-	if req.Status != nil && *req.Status != string(existing.Status) {
-		t, err := s.svc.MoveTask(id, domain.Status(*req.Status))
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		s.logChange(r, t.ProjectID, syncsrv.EventTaskUpdated, t)
-		writeJSON(w, http.StatusOK, t)
+	patch, err := taskPatchFromJSON(body)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	updated := *existing
-	if req.Title != nil {
-		updated.Title = *req.Title
-	}
-	if req.Description != nil {
-		updated.Description = *req.Description
-	}
-	if req.Priority != nil {
-		updated.Priority = domain.Priority(*req.Priority)
-	}
-	if req.AssigneeID != nil {
-		if *req.AssigneeID == "" {
-			updated.AssigneeID = nil
-		} else {
-			updated.AssigneeID = req.AssigneeID
-		}
-	}
-	if req.Points != nil {
-		updated.Points = req.Points
-	}
-	if req.Labels != nil {
-		updated.Labels = req.Labels
-	}
-	if req.SprintID != nil {
-		updated.SprintID = req.SprintID
-	}
-	t, err := s.svc.UpdateTask(&updated)
+	// One patch carries every field in the request, so a status change and an
+	// edit to another field are applied together, and fields the request does
+	// not name keep whatever the store holds now.
+	t, err := s.svc.PatchTask(id, patch)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, statusFor(err), err.Error())
 		return
 	}
 	s.logChange(r, t.ProjectID, syncsrv.EventTaskUpdated, t)
 	writeJSON(w, http.StatusOK, t)
+}
+
+// statusFor maps a service error to an HTTP status.
+func statusFor(err error) int {
+	switch {
+	case errors.Is(err, domain.ErrInvalid):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, domain.ErrConflict):
+		return http.StatusConflict
+	}
+	return http.StatusInternalServerError
+}
+
+// taskPatchFromJSON reads a PATCH body. A field that is absent is left alone.
+// For assignee_id, points, sprint_id and labels an explicit null empties the
+// field, which a plain struct decode cannot tell apart from absent.
+// expected_updated_at carries the updated_at the client read, making the
+// change conditional on the ticket not having changed since.
+func taskPatchFromJSON(body map[string]json.RawMessage) (domain.TaskPatch, error) {
+	var p domain.TaskPatch
+	isNull := func(raw json.RawMessage) bool { return string(bytes.TrimSpace(raw)) == "null" }
+	read := func(key string, into any, what string) (present bool, err error) {
+		raw, ok := body[key]
+		if !ok || isNull(raw) {
+			return false, nil
+		}
+		if err := json.Unmarshal(raw, into); err != nil {
+			return false, fmt.Errorf("%s must be %s", key, what)
+		}
+		return true, nil
+	}
+
+	var text string
+	if ok, err := read("title", &text, "a string"); err != nil {
+		return p, err
+	} else if ok {
+		p.Title = domain.To(text)
+	}
+	if ok, err := read("description", &text, "a string"); err != nil {
+		return p, err
+	} else if ok {
+		p.Description = domain.To(text)
+	}
+	if ok, err := read("status", &text, "a string"); err != nil {
+		return p, err
+	} else if ok {
+		p.Status = domain.To(domain.Status(text))
+	}
+	if ok, err := read("priority", &text, "a string"); err != nil {
+		return p, err
+	} else if ok {
+		p.Priority = domain.To(domain.Priority(text))
+	}
+
+	if raw, ok := body["assignee_id"]; ok {
+		if isNull(raw) {
+			p.AssigneeID = domain.Clear[string]()
+		} else {
+			var v string
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return p, errors.New("assignee_id must be a string or null")
+			}
+			p.AssigneeID = domain.To(&v)
+		}
+	}
+	if raw, ok := body["points"]; ok {
+		if isNull(raw) {
+			p.Points = domain.Clear[int]()
+		} else {
+			var v int
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return p, errors.New("points must be a whole number or null")
+			}
+			p.Points = domain.To(&v)
+		}
+	}
+	if raw, ok := body["sprint_id"]; ok {
+		if isNull(raw) {
+			p.SprintID = domain.Clear[int64]()
+		} else {
+			var v int64
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return p, errors.New("sprint_id must be a whole number or null")
+			}
+			p.SprintID = domain.To(&v)
+		}
+	}
+	if raw, ok := body["labels"]; ok {
+		var v []string
+		if !isNull(raw) {
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return p, errors.New("labels must be a list of strings or null")
+			}
+		}
+		p.Labels = domain.To(v)
+	}
+
+	var when time.Time
+	if ok, err := read("expected_updated_at", &when, "a timestamp, as returned in updated_at"); err != nil {
+		return p, err
+	} else if ok {
+		p.IfUpdatedAt = &when
+	}
+	return p, nil
 }
 
 func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
